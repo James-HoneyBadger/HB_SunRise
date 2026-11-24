@@ -26,6 +26,11 @@ const (
 
 	// maxChainPages bounds the continuation pages a single definition may use.
 	maxChainPages = 64
+
+	// maxRowCountHint bounds the row count a definition reports. The count is
+	// only used to size buffers, so a corrupt count cannot demand a huge
+	// allocation; a real database holds far fewer rows.
+	maxRowCountHint = 1 << 20
 )
 
 // Page-relative offsets of the fields of a single column entry.
@@ -193,7 +198,12 @@ func (d *Database) Definition(page int) (*Definition, error) {
 	}
 
 	rowCount, _ := readU32(header, definitionRowCountOffset)
-	definition.RowCount = int(rowCount)
+
+	if rowCount > maxRowCountHint {
+		definition.RowCount = maxRowCountHint
+	} else {
+		definition.RowCount = int(rowCount)
+	}
 
 	firstDataPage, _ := readU16(header, definitionFirstDataPageOffset)
 	definition.FirstDataPage = firstDataPage

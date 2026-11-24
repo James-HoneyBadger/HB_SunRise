@@ -30,6 +30,11 @@ const (
 	longValueFlagsMask   = 0xFF000000
 	longValuePageRow     = 4
 	longValueChainHeader = 4
+
+	// longValueMaxSize bounds how large a chained long value may grow: the
+	// chain is followed for at most maxChainPages pages, so it cannot hold
+	// more than one page per link.
+	longValueMaxSize = maxChainPages * PageSize
 )
 
 // moneyScale is the number of decimal digits a money value is stored with.
@@ -403,8 +408,16 @@ func (d *Database) longValue(header []byte) ([]byte, error) {
 }
 
 // chainedValue collects a long value that is spread over several leaf pages.
+// The claimed length is untrusted, so the buffer is never preallocated beyond
+// what the chain can actually hold.
 func (d *Database) chainedValue(length uint32, header []byte) []byte {
-	output := make([]byte, 0, length)
+	capacity := longValueMaxSize
+
+	if length < uint32(capacity) {
+		capacity = int(length)
+	}
+
+	output := make([]byte, 0, capacity)
 
 	pageRow, _ := readU32(header, longValuePageRow)
 
@@ -421,8 +434,8 @@ func (d *Database) chainedValue(length uint32, header []byte) []byte {
 		pageRow, _ = readU32(chunk, 0)
 	}
 
-	if int(length) < len(output) {
-		output = output[:length]
+	if uint64(length) < uint64(len(output)) {
+		output = output[:int(length)]
 	}
 
 	return output

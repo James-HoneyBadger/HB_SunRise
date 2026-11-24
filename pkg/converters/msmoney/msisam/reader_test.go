@@ -4,6 +4,8 @@
 package msisam
 
 import (
+	"bytes"
+	"fmt"
 	"testing"
 	"time"
 
@@ -395,6 +397,115 @@ func TestValueDecodesChainedMemo(t *testing.T) {
 	text, err := database.String(Field{Column: Column{Type: ColumnTypeMemo}, Data: head})
 	require.NoError(t, err)
 	assert.Equal(t, "MemoBody", text)
+}
+
+func TestChainedValueBoundsClaimedLength(t *testing.T) {
+	last := make([]byte, 4)
+	leaf := buildDataPage(0, [][]byte{append(append([]byte{}, last...), []byte("Body")...)})
+
+	next := make([]byte, 4)
+	putU32(next, 0, 2<<8)
+	root := buildDataPage(0, [][]byte{append(append([]byte{}, next...), []byte("Memo")...)})
+
+	database, err := Open(buildDatabaseFromPages(root, leaf))
+	require.NoError(t, err)
+
+	head := make([]byte, longValueOverhead)
+	putU32(head, 0, 0x00FFFFFF) // the largest chained length, with no flag bits
+	putU32(head, longValuePageRow, 1<<8)
+
+	value, err := database.String(Field{Column: Column{Type: ColumnTypeMemo}, Data: head})
+	require.NoError(t, err)
+	assert.Equal(t, "MemoBody", value, "the buffer must never be preallocated to the claimed length")
+
+	putU32(head, 0, 2) // a small claimed length truncates the value
+
+	value, err = database.String(Field{Column: Column{Type: ColumnTypeMemo}, Data: head})
+	require.NoError(t, err)
+	assert.Equal(t, "Me", value)
+}
+
+func TestDefinitionClampsRowCountHint(t *testing.T) {
+	pages := definitionPages(0xFFFFFFFF, 2, []testColumn{
+		{name: "id", kind: ColumnTypeLongInt, fixed: true, offset: 0, size: 4},
+	})
+
+	database, err := Open(buildDatabaseFromPages(pages...))
+	require.NoError(t, err)
+
+	definition, err := database.Definition(1)
+	require.NoError(t, err)
+	assert.Equal(t, maxRowCountHint, definition.RowCount)
+}
+
+func TestOpenNeverPanicsOnMalformedInput(t *testing.T) {
+	seed := make([]byte, PageSize)
+	copy(seed[magicOffset:], Magic)
+
+	inputs := map[string][]byte{
+		"empty":                {},
+		"smaller than a page":  bytes.Repeat([]byte{0xFF}, PageSize-1),
+		"zero filled":          make([]byte, PageSize),
+		"magic only":           seed,
+		"magic and zero pages": append(append([]byte{}, seed...), make([]byte, 16*PageSize)...),
+	}
+
+	// Flip one byte at every offset of a valid-looking header, to catch paths
+	// that trust a single field without checking the rest of the page.
+	for offset := 0; offset < PageSize; offset++ {
+		mutated := append([]byte{}, seed...)
+		mutated[offset] ^= 0xFF
+		inputs[fmt.Sprintf("flipped byte at %d", offset)] = mutated
+	}
+
+	for name, input := range inputs {
+		t.Run(name, func(t *testing.T) {
+			database, err := Open(input)
+
+			if err != nil {
+				return
+			}
+
+			tables, err := database.Tables()
+
+			if err != nil {
+				return
+			}
+
+			for _, table := range tables {
+				_ = database.EachRow(table.Definition, func([]Field) error { return nil })
+			}
+		})
+	}
+}
+
+// FuzzOpen checks that no input can panic or loop forever while opening a
+// database, reading its tables, and walking every row.
+func FuzzOpen(f *testing.F) {
+	f.Add([]byte{})
+	f.Add(make([]byte, PageSize))
+
+	seed := make([]byte, PageSize)
+	copy(seed[magicOffset:], Magic)
+	f.Add(seed)
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		database, err := Open(data)
+
+		if err != nil {
+			return
+		}
+
+		tables, err := database.Tables()
+
+		if err != nil {
+			return
+		}
+
+		for _, table := range tables {
+			_ = database.EachRow(table.Definition, func([]Field) error { return nil })
+		}
+	})
 }
 
 func TestCatalogNamesTables(t *testing.T) {

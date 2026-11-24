@@ -109,6 +109,74 @@ func TestQIFWritesBothSidesOfATransfer(t *testing.T) {
 	assert.Contains(t, text, "PMilk, \"2%\" and eggs")
 }
 
+func TestCSVNeutralizesFormulaPrefixes(t *testing.T) {
+	day := time.Date(2024, 3, 5, 0, 0, 0, 0, time.UTC)
+	data := &msmoney.ExtractedData{
+		Accounts: []msmoney.ExtractedAccount{{Name: "Checking", Currency: "USD"}},
+		Transactions: []msmoney.ExtractedTransaction{
+			{Time: day, Type: msmoney.ExtractedTypeExpense, Account: "=cmd|' /C calc'!A0", Currency: "USD", Amount: 1234, Category: "+Food", SubCategory: "@Sub", Memo: "=HYPERLINK(\"http://evil\")"},
+		},
+	}
+
+	var out bytes.Buffer
+	assert.Nil(t, writeCSV(&out, data))
+
+	rows, err := csv.NewReader(strings.NewReader(strings.TrimPrefix(out.String(), "\ufeff"))).ReadAll()
+	assert.Nil(t, err)
+	assert.Equal(t, "'=cmd|' /C calc'!A0", rows[1][2])
+	assert.Equal(t, "-12.34", rows[1][4], "amounts keep their sign and are never prefixed")
+	assert.Equal(t, "'+Food", rows[1][6])
+	assert.Equal(t, "'@Sub", rows[1][7])
+	assert.Equal(t, "'=HYPERLINK(\"http://evil\")", rows[1][8])
+}
+
+func TestHoneyLedgerCSVNeutralizesFormulaPrefixes(t *testing.T) {
+	day := time.Date(2024, 3, 5, 0, 0, 0, 0, time.UTC)
+	data := &msmoney.ExtractedData{
+		Accounts: []msmoney.ExtractedAccount{{Name: "Checking", Currency: "USD"}},
+		Transactions: []msmoney.ExtractedTransaction{
+			{Time: day, Type: msmoney.ExtractedTypeExpense, Account: "=cmd|' /C calc'!A0", Currency: "USD", Amount: 1234, Category: "+Food", SubCategory: "@Sub", Memo: "=HYPERLINK(\"http://evil\")"},
+		},
+	}
+
+	var out bytes.Buffer
+	assert.Nil(t, writeHoneyLedgerCSV(&out, data))
+
+	rows, err := csv.NewReader(&out).ReadAll()
+	assert.Nil(t, err)
+	assert.Equal(t, "'+Food", rows[1][3])
+	assert.Equal(t, "'@Sub", rows[1][4])
+	assert.Equal(t, "'=cmd|' /C calc'!A0", rows[1][5])
+	assert.Equal(t, "12.34", rows[1][7], "amounts are never prefixed")
+	assert.Equal(t, "'=HYPERLINK(\"http://evil\")", rows[1][13])
+}
+
+func TestXLSXStripsInvalidCharacters(t *testing.T) {
+	day := time.Date(2024, 3, 5, 0, 0, 0, 0, time.UTC)
+	data := &msmoney.ExtractedData{
+		Accounts: []msmoney.ExtractedAccount{{Name: "Bad\x01Name\uFFFE", Currency: "USD"}},
+		Transactions: []msmoney.ExtractedTransaction{
+			{Time: day, Type: msmoney.ExtractedTypeExpense, Account: "Checking", Currency: "USD", Amount: 1234, Memo: "line1\x01line2\nline3\uFFFF"},
+		},
+	}
+
+	var out bytes.Buffer
+	assert.Nil(t, writeXLSX(&out, data))
+
+	file, err := excelize.OpenReader(&out)
+	assert.Nil(t, err)
+
+	defer file.Close()
+
+	rows, err := file.GetRows("Transactions")
+	assert.Nil(t, err)
+	assert.Equal(t, "line1line2\nline3", rows[1][8])
+
+	accounts, err := file.GetRows("Accounts")
+	assert.Nil(t, err)
+	assert.Equal(t, "BadName", accounts[1][0])
+}
+
 func TestXLSXHasBothSheets(t *testing.T) {
 	var out bytes.Buffer
 	assert.Nil(t, writeXLSX(&out, sampleData()))

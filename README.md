@@ -64,6 +64,12 @@ A transfer is listed once, in the account the money left, with the receiving
 account in the *Transfer Account* column. In QIF it appears in both accounts so
 the accounts balance.
 
+Text fields (memos, names, categories) that start with a formula character
+(`=`, `+`, `-`, `@`) get a leading apostrophe in the CSV, TSV and Honey Ledger
+CSV outputs, so a memo cannot run as a formula when the file is opened in a
+spreadsheet. XLSX cells are stripped of the control characters a cell cannot
+hold; QIF memos are written on one line.
+
 ## What is left out
 
 Investment activity, the total line of a split transaction, and rows without an

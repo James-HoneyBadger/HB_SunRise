@@ -185,6 +185,41 @@ func categoryPath(t msmoney.ExtractedTransaction) string {
 	return t.Category
 }
 
+// spreadsheetSafe returns the text with a leading apostrophe added when it
+// starts with a character a spreadsheet would treat as a formula (=, +, -, @,
+// tab or carriage return), so a memo like "=HYPERLINK(...)" displays as text
+// instead of executing when the CSV is opened. Amounts are not passed through
+// here: they are rendered by formatAmount and always start with a digit or -.
+func spreadsheetSafe(text string) string {
+	trimmed := strings.TrimLeft(text, " \t\r")
+
+	if trimmed != "" {
+		switch trimmed[0] {
+		case '=', '+', '-', '@', '\t', '\r':
+			return "'" + text
+		}
+	}
+
+	return text
+}
+
+// xlsxSafeText removes the characters an Excel cell cannot hold: control
+// characters other than tab and line breaks, and the two non-characters that
+// are invalid in XML.
+func xlsxSafeText(text string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 && r != '\t' && r != '\n' && r != '\r' {
+			return -1
+		}
+
+		if r == 0xFFFE || r == 0xFFFF {
+			return -1
+		}
+
+		return r
+	}, text)
+}
+
 func writeDelimited(w io.Writer, comma rune, withByteOrderMark bool, data *msmoney.ExtractedData) error {
 	if withByteOrderMark {
 		// Excel needs the mark to read accented characters correctly.
@@ -203,7 +238,7 @@ func writeDelimited(w io.Writer, comma rune, withByteOrderMark bool, data *msmon
 	}
 
 	for _, t := range data.Transactions {
-		row := []string{formatDate(t.Time), t.Type, t.Account, t.Currency, formatAmount(signedAmount(t)), t.TransferAccount, t.Category, t.SubCategory, t.Memo}
+		row := []string{formatDate(t.Time), t.Type, spreadsheetSafe(t.Account), t.Currency, formatAmount(signedAmount(t)), spreadsheetSafe(t.TransferAccount), spreadsheetSafe(t.Category), spreadsheetSafe(t.SubCategory), spreadsheetSafe(t.Memo)}
 
 		if err := writer.Write(row); err != nil {
 			return err
@@ -244,7 +279,7 @@ func writeHoneyLedgerCSV(w io.Writer, data *msmoney.ExtractedData) error {
 			account2Amount = amount
 		}
 
-		row := []string{t.Time.Format("2006-01-02 15:04:05"), timezone, t.Type, t.Category, t.SubCategory, t.Account, t.Currency, amount, t.TransferAccount, t.TransferCurrency, account2Amount, "", "", t.Memo}
+		row := []string{t.Time.Format("2006-01-02 15:04:05"), timezone, t.Type, spreadsheetSafe(t.Category), spreadsheetSafe(t.SubCategory), spreadsheetSafe(t.Account), t.Currency, amount, spreadsheetSafe(t.TransferAccount), t.TransferCurrency, account2Amount, "", "", spreadsheetSafe(t.Memo)}
 
 		if err := writer.Write(row); err != nil {
 			return err
@@ -390,9 +425,9 @@ func writeXLSX(w io.Writer, data *msmoney.ExtractedData) error {
 
 		row := []any{
 			excelize.Cell{StyleID: dateStyle, Value: time.Date(t.Time.Year(), t.Time.Month(), t.Time.Day(), 0, 0, 0, 0, time.UTC)},
-			t.Type, t.Account, t.Currency,
+			xlsxSafeText(t.Type), xlsxSafeText(t.Account), xlsxSafeText(t.Currency),
 			excelize.Cell{StyleID: amountStyle, Value: float64(signedAmount(t)) / 100},
-			t.TransferAccount, t.Category, t.SubCategory, t.Memo,
+			xlsxSafeText(t.TransferAccount), xlsxSafeText(t.Category), xlsxSafeText(t.SubCategory), xlsxSafeText(t.Memo),
 		}
 
 		if err := stream.SetRow(cell, row); err != nil {
@@ -425,7 +460,7 @@ func writeXLSX(w io.Writer, data *msmoney.ExtractedData) error {
 			return err
 		}
 
-		if err := accountStream.SetRow(cell, []any{a.Name, a.Currency}); err != nil {
+		if err := accountStream.SetRow(cell, []any{xlsxSafeText(a.Name), xlsxSafeText(a.Currency)}); err != nil {
 			return err
 		}
 	}
