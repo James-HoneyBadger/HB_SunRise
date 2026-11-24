@@ -134,8 +134,13 @@ func TestCleanPathKeepsExistingNamesUntouched(t *testing.T) {
 
 // TestCleanPathUnescapesWhenOnlyTheUnescapedPathExists checks the drag-and-drop
 // case the transformation exists for: the terminal inserts "My\ File.mny" and
-// only "My File.mny" is on disk.
+// only "My File.mny" is on disk. On Windows a backslash is a separator, not an
+// escape, so the transformation is skipped there by design.
 func TestCleanPathUnescapesWhenOnlyTheUnescapedPathExists(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a backslash-space is a Windows path separator, not an escape")
+	}
+
 	dir := t.TempDir()
 	real := filepath.Join(dir, "My File.mny")
 	require.NoError(t, os.WriteFile(real, []byte("x"), 0o644))
