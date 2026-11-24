@@ -18,9 +18,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/James-HoneyBadger/hb-sunrise/pkg/converters/msmoney"
 	"github.com/James-HoneyBadger/hb-sunrise/pkg/core"
 	"github.com/James-HoneyBadger/hb-sunrise/pkg/log"
-	"github.com/James-HoneyBadger/money-engine/msmoney"
 )
 
 const appName = "HB SunRise"

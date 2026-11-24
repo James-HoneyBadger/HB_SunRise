@@ -3,13 +3,12 @@ module github.com/James-HoneyBadger/hb-sunrise
 go 1.27.0
 
 require (
-	github.com/James-HoneyBadger/money-engine v0.0.0
+	github.com/abemedia/go-cabinet v0.3.0
 	github.com/stretchr/testify v1.12.1
 	github.com/xuri/excelize/v2 v2.11.1
 )
 
 require (
-	github.com/abemedia/go-cabinet v0.3.0 // indirect
 	github.com/klauspost/compress v1.20.3 // indirect
 	github.com/richardlehane/mscfb v1.0.9 // indirect
 	github.com/richardlehane/msoleps v1.0.6 // indirect
@@ -21,5 +20,3 @@ require (
 	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 )
-
-replace github.com/James-HoneyBadger/money-engine => ../money-engine

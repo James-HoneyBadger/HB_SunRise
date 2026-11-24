@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/James-HoneyBadger/money-engine/msmoney"
+	"github.com/James-HoneyBadger/hb-sunrise/pkg/converters/msmoney"
 )
 
 func sampleData() *msmoney.ExtractedData {

@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/James-HoneyBadger/money-engine/export"
-	"github.com/James-HoneyBadger/money-engine/msmoney"
+	"github.com/James-HoneyBadger/hb-sunrise/pkg/converters/export"
+	"github.com/James-HoneyBadger/hb-sunrise/pkg/converters/msmoney"
 )
 
 // outputFormat is a file format the extracted data can be written in
@@ -161,8 +161,8 @@ func uniquePath(path string) (string, error) {
 	}
 }
 
-// The format writers live in the shared money-engine module, so HB SunRise and
-// Honey Ledger maintain exactly one implementation of every output format.
+// The format writers live in the export package next to the extraction, so
+// every output format is implemented in exactly one place in this program.
 
 func writeCSV(w io.Writer, data *msmoney.ExtractedData) error {
 	return export.WriteCSV(w, data)

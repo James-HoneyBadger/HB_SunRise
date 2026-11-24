@@ -20,23 +20,30 @@ HB SunRise resurrects archived, obsolete Microsoft Money files:
 
 ## What was extracted and how
 
-The scaffold mirrors the extractor's two-tier design, with the parser itself
-living in the shared [money-engine module](../../money-engine), which Honey
-Ledger consumes too:
+The scaffold mirrors the extractor's two-tier design:
 
 ```
 cmd/hb-sunrise/                  user interface: CLI + interactive Q&A
   main.go                        flags, prompts, error translation, exit codes
-  formats.go                     format registry; writers come from money-engine/export
+  formats.go                     format registry; writers come from pkg/converters/export
   main_test.go                   tests over a shared sample ExtractedData
   pipeline_test.go               end-to-end tests over synthetic .mny/.mbf files
+pkg/converters/msmoney/          the parser (no I/O, no UI knowledge)
+  microsoft_money_extract.go     public API: ExtractMicrosoftMoneyData(ctx, data)
+  microsoft_money_data_reader.go accounts, categories, transactions, splits
+  microsoft_money_backup_archive.go  .mbf cabinet handling with resource limits
+  microsoft_money_data_file_signature.go  MSISAM header check
+  msisam/                        the engine: header, pages, definitions, rows
+  synthetic/                     synthetic .mny/.mbf files for tests
+pkg/converters/export/           the six output writers
 pkg/core/                        Context interface + NullContext
-pkg/log/                         quiet-able logger (stdlib), bound to the engine
+pkg/log/                         quiet-able logger (stdlib), bound to the extraction
+scripts/build-hb-sunrise.sh      static cross-builds for 5 platforms
 ```
 
-money-engine holds the parser (`msmoney`), the engine (`msisam`), the six
-output writers (`export`) and the synthetic file generator (`synthetic`); its
-README maps the extraction API onto this program.
+The parser (`msmoney`), the engine (`msisam`), the writers (`export`) and the
+synthetic files are self-contained in this repository, so the program builds
+with nothing else present.
 
 Rules that keep this working:
 
@@ -55,14 +62,14 @@ Rules that keep this working:
 
 ### Add an output format
 
-1. Add a writer to [`money-engine/export`](../../money-engine/export), then an
+1. Add a writer to [`pkg/converters/export`](../pkg/converters/export), then an
    entry to `allFormats` in [formats.go](../cmd/hb-sunrise/formats.go): key,
    name, extension, description, and a `write func(io.Writer,
    *msmoney.ExtractedData) error` calling it.
 2. Follow the amount rules: signed from the account's point of view everywhere
    except `honeyledger`; transfers listed once with the receiving account, and
    in both accounts for QIF.
-3. Add a test next to the writer in money-engine; the end-to-end pipeline test
+3. Add a test next to the writer in `export`; the end-to-end pipeline test
    covers the new format for free.
 
 ### Add an input reader
@@ -70,8 +77,8 @@ Rules that keep this working:
 Add a package with the same shape as `msmoney`:
 `Extract<Format>Data(ctx, data []byte) (*ExtractedData, error)`. If it can be
 expressed with the same `ExtractedAccount` / `ExtractedTransaction` structs,
-every output format works for it for free — the structs already live in the
-shared money-engine module, so just register the new reader in `main.go`.
+every output format works for it for free, so just register the new reader in
+`main.go`.
 
 ## The roadmap
 
