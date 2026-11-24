@@ -26,9 +26,13 @@ import (
 const appName = "HB SunRise"
 
 // version is set at build time from package.json by
-// scripts/build-money-extractor.sh, so a downloaded binary and the release it
+// scripts/build-hb-sunrise.sh, so a downloaded binary and the release it
 // came from report the same number. A plain "go build" leaves it as dev.
 var version = "dev"
+
+// extractData parses the input file. It is a variable so tests can stand in
+// for the parser, which needs a real Microsoft Money data file.
+var extractData = msmoney.ExtractMicrosoftMoneyData
 
 func main() {
 	log.SetQuiet()
@@ -41,6 +45,7 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 
 	formatList := flags.String("f", "", "output format(s), comma separated: "+formatKeys()+", or all")
 	outputDir := flags.String("o", "", "output folder (default: next to the input file)")
+	dryRun := flags.Bool("dry-run", false, "print the accounts, transactions, date range and skipped rows, and exit without writing files")
 	listFormats := flags.Bool("list", false, "list the supported output formats and exit")
 	showVersion := flags.Bool("version", false, "print the version and exit")
 
@@ -112,7 +117,7 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 
 	fmt.Fprintf(stdout, "Reading %s ...\n", filepath.Base(inputPath))
 
-	extracted, err := msmoney.ExtractMicrosoftMoneyData(core.NewNullContext(), data)
+	extracted, err := extractData(core.NewNullContext(), data)
 
 	if err != nil {
 		fmt.Fprintf(stderr, "Cannot extract %q: %s\n", inputPath, describeError(err))
@@ -120,6 +125,10 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 	}
 
 	printSummary(stdout, extracted)
+
+	if *dryRun {
+		return 0
+	}
 
 	if len(extracted.Transactions) < 1 && len(extracted.Accounts) < 1 {
 		fmt.Fprintln(stderr, "The file holds no accounts or transactions to extract.")
@@ -169,10 +178,13 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 	return finish(interactive, reader, stdout, 0)
 }
 
-// finish keeps the window open when the program was started by double-clicking
-// it, so the messages can be read before it closes.
+// finish keeps the window open when the program was started interactively —
+// by double-clicking it, or with missing arguments — so the messages, success
+// or error, can be read before the window closes. A double-clicked program has
+// no terminal, so the pause must not depend on stdin being one. Scripted runs
+// pass -f and a file and are never paused.
 func finish(interactive bool, reader *bufio.Reader, stdout io.Writer, code int) int {
-	if interactive && isTerminal(os.Stdin) {
+	if interactive {
 		ask(reader, stdout, "\nPress Enter to exit. ")
 	}
 
@@ -252,21 +264,57 @@ func ask(reader *bufio.Reader, stdout io.Writer, prompt string) string {
 	return strings.TrimSpace(line)
 }
 
-// cleanPath removes the quotes a terminal adds when a file is dragged onto it.
+// cleanPath removes what a shell or file manager adds when a file is dragged
+// onto the program: surrounding single or double quotes, surrounding and
+// trailing whitespace, and the backslash-escaped spaces a Unix terminal
+// inserts. Windows paths keep their backslashes.
 func cleanPath(path string) string {
 	path = strings.TrimSpace(path)
 
 	if len(path) >= 2 && (path[0] == '"' || path[0] == '\'') && path[len(path)-1] == path[0] {
-		path = path[1 : len(path)-1]
+		path = strings.TrimSpace(path[1 : len(path)-1])
+	}
+
+	if !isWindowsPath(path) {
+		path = unescapeSpaces(path)
 	}
 
 	return path
 }
 
-func isTerminal(file *os.File) bool {
-	info, err := file.Stat()
+// isWindowsPath reports whether the path is a Windows drive path or a UNC
+// path, whose backslashes are separators and must not be treated as escapes.
+func isWindowsPath(path string) bool {
+	if len(path) >= 3 && path[1] == ':' && path[2] == '\\' &&
+		((path[0] >= 'A' && path[0] <= 'Z') || (path[0] >= 'a' && path[0] <= 'z')) {
+		return true
+	}
 
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
+	return strings.HasPrefix(path, `\\`)
+}
+
+// unescapeSpaces turns the backslash-escaped spaces a Unix terminal inserts
+// when a file is dragged onto it back into plain spaces, so "/path/My\
+// File.mny" names the file it points at. A backslash in front of another
+// backslash escapes a real backslash, which is kept.
+func unescapeSpaces(path string) string {
+	var builder strings.Builder
+	builder.Grow(len(path))
+
+	for i := 0; i < len(path); i++ {
+		switch {
+		case path[i] == '\\' && i+1 < len(path) && path[i+1] == ' ':
+			builder.WriteByte(' ')
+			i++
+		case path[i] == '\\' && i+1 < len(path) && path[i+1] == '\\':
+			builder.WriteByte('\\')
+			i++
+		default:
+			builder.WriteByte(path[i])
+		}
+	}
+
+	return builder.String()
 }
 
 // describeError explains a failure in terms of the file the user picked.

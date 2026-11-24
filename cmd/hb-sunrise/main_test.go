@@ -14,9 +14,11 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/xuri/excelize/v2"
 
 	"github.com/James-HoneyBadger/hb-sunrise/pkg/converters/msmoney"
+	"github.com/James-HoneyBadger/hb-sunrise/pkg/core"
 )
 
 func sampleData() *msmoney.ExtractedData {
@@ -168,4 +170,100 @@ func TestVersionFlagReportsTheBuildVersion(t *testing.T) {
 
 	assert.Equal(t, 0, run([]string{"-version"}, strings.NewReader(""), &stdout, &stderr))
 	assert.Equal(t, "HB SunRise 2.1.0\n", stdout.String())
+}
+
+func TestCleanPathStripsQuotesWhitespaceAndEscapedSpaces(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"double quotes", `"C:\Money\My File.mny"`, `C:\Money\My File.mny`},
+		{"single quotes", `'/home/me/My File.mny'`, `/home/me/My File.mny`},
+		{"trailing whitespace", "  /home/me/My File.mny  \n", `/home/me/My File.mny`},
+		{"escaped spaces", `/home/me/My\ File.mny`, `/home/me/My File.mny`},
+		{"escaped backslash and space", `/home/me/odd\\ file.mny`, `/home/me/odd\ file.mny`},
+		{"windows drive path untouched", `C:\Program Files\Money\file.mny`, `C:\Program Files\Money\file.mny`},
+		{"unc path untouched", `\\server\share\My File.mny`, `\\server\share\My File.mny`},
+		{"unix backslashes kept", `/home/me/keep\back.mny`, `/home/me/keep\back.mny`},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, test.want, cleanPath(test.in))
+		})
+	}
+}
+
+// panicOnRead fails the test if anything tries to read from it, so a run that
+// must stay non-interactive cannot accidentally pause or ask a question.
+type panicOnRead struct{}
+
+func (panicOnRead) Read([]byte) (int, error) {
+	panic("unexpected stdin read: a scripted run must not pause or ask")
+}
+
+// stubExtract returns a restore function that puts the real parser back.
+func stubExtract() func() {
+	original := extractData
+
+	extractData = func(ctx core.Context, data []byte) (*msmoney.ExtractedData, error) {
+		return sampleData(), nil
+	}
+
+	return func() { extractData = original }
+}
+
+func TestInteractiveErrorPausesBeforeExit(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	stdin := strings.NewReader("/nonexistent.mny\n")
+
+	assert.Equal(t, 1, run(nil, stdin, &stdout, &stderr))
+	assert.Contains(t, stdout.String(), "Press Enter to exit.")
+}
+
+func TestInteractiveSuccessPausesAtEnd(t *testing.T) {
+	input := filepath.Join(t.TempDir(), "sample.mny")
+	require.NoError(t, os.WriteFile(input, []byte("dummy"), 0o644))
+	defer stubExtract()()
+
+	stdin := strings.NewReader(input + "\n\n\n")
+	var stdout, stderr bytes.Buffer
+
+	assert.Equal(t, 0, run(nil, stdin, &stdout, &stderr))
+	assert.Contains(t, stdout.String(), "Done.")
+	assert.Contains(t, stdout.String(), "Press Enter to exit.")
+}
+
+func TestScriptedRunNeverPausesOrAsks(t *testing.T) {
+	input := filepath.Join(t.TempDir(), "sample.mny")
+	require.NoError(t, os.WriteFile(input, []byte("dummy"), 0o644))
+	defer stubExtract()()
+
+	outDir := filepath.Join(t.TempDir(), "out")
+	var stdout, stderr bytes.Buffer
+
+	assert.Equal(t, 0, run([]string{"-f", "csv", "-o", outDir, input}, panicOnRead{}, &stdout, &stderr))
+	assert.NotContains(t, stdout.String(), "Press Enter")
+	assert.FileExists(t, filepath.Join(outDir, "sample.csv"))
+}
+
+func TestScriptedErrorStillDoesNotPause(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	assert.Equal(t, 1, run([]string{"-f", "csv", "/nonexistent.mny"}, panicOnRead{}, &stdout, &stderr))
+	assert.NotContains(t, stdout.String(), "Press Enter")
+}
+
+func TestDryRunPrintsSummaryAndWritesNothing(t *testing.T) {
+	input := filepath.Join(t.TempDir(), "sample.mny")
+	require.NoError(t, os.WriteFile(input, []byte("dummy"), 0o644))
+	defer stubExtract()()
+
+	var stdout, stderr bytes.Buffer
+
+	assert.Equal(t, 0, run([]string{"-dry-run", input}, panicOnRead{}, &stdout, &stderr))
+	assert.Contains(t, stdout.String(), "Found 3 accounts and 3 transactions")
+	assert.NotContains(t, stdout.String(), "Press Enter")
+	assert.NotContains(t, stdout.String(), "sample.csv")
 }

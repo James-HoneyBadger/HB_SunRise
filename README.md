@@ -29,12 +29,14 @@ For scripts, give everything on the command line and nothing is asked:
 
 ```sh
 hb-sunrise -f csv,xlsx -o ./exported "2026_11_21_Backup.mbf"
+hb-sunrise -dry-run "2026_11_21_Backup.mbf"   # see what it holds before exporting
 ```
 
 | Option | Meaning |
 |--------|---------|
 | `-f`   | Formats, comma separated, or `all` |
 | `-o`   | Output folder, created if it does not exist (default: next to the input file) |
+| `-dry-run` | Print the account count, transaction count, date range and skipped rows, then exit without writing files |
 | `-list` | List the formats and their keys |
 | `-version` | Print the version; a downloaded binary reports the release it came from |
 | `-h`   | Print the usage summary |
