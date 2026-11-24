@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Package log is a slim stand-in for honey-ledger's pkg/log. It offers the
-// context-aware log functions the money file parser uses, without the logrus
-// and settings machinery the server needs. SetQuiet discards all output, so
-// command line tools that report their own results are not cluttered by the
-// log lines of the libraries they call.
+// context-aware log functions HB SunRise binds to the money-engine extraction,
+// without the logrus and settings machinery the server needs. SetQuiet
+// discards all output, so command line tools that report their own results are
+// not cluttered by the log lines of the libraries they call.
 package log
 
 import (
