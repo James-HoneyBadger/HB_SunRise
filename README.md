@@ -15,6 +15,10 @@ Money files into usable formats. It is built on the engine of
 its own small project. It needs no server, no database and no login, it never
 changes the file it reads, and it works fully offline.
 
+The Jet 4 / MSISAM file format the reader decodes is documented in
+[docs/MONEY_FILE_FORMAT.md](docs/MONEY_FILE_FORMAT.md), so the format itself
+needs no copy of Money to understand.
+
 ## Using it
 
 Double-click the program and answer the questions in the window:
