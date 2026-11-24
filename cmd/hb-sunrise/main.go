@@ -25,7 +25,7 @@ import (
 
 const appName = "HB SunRise"
 
-// version is set at build time from package.json by
+// version is set at build time from the git tag the commit sits on by
 // scripts/build-hb-sunrise.sh, so a downloaded binary and the release it
 // came from report the same number. A plain "go build" leaves it as dev.
 var version = "dev"

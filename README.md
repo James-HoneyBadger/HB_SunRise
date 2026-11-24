@@ -48,6 +48,22 @@ Existing files are never overwritten; a number is added to the new file's name
 The exit status is `0` when every requested file was written, `1` when the file
 could not be read, extracted or written, and `2` for a bad option or format name.
 
+## First-run security warnings
+
+The release binaries are not signed, so the first run of a downloaded binary
+is stopped by the operating system. Both warnings appear because the project
+has no paid code-signing certificate, not because the program is dangerous.
+
+- **macOS**: Gatekeeper blocks the download. Remove the quarantine mark and
+  run it — `xattr -d com.apple.quarantine ./hb-sunrise-darwin-amd64` (use
+  `hb-sunrise-darwin-arm64` on Apple silicon) — or right-click the program and
+  choose **Open**.
+- **Windows**: SmartScreen shows "Windows protected your PC". Choose
+  **More info → Run anyway**.
+
+HB SunRise makes no network connections and only reads the file you point it
+at, and `SHA256SUMS.txt` next to the release lets you verify a download.
+
 ## Formats
 
 | Key | File | Use it for |
@@ -85,9 +101,12 @@ scripts/build-hb-sunrise.sh   # Linux, Windows and macOS builds in dist/
 ```
 
 `scripts/build-hb-sunrise.sh` produces the same five files in `dist/` with CGO
-disabled, so the result is a single file with no dependencies. It stamps the
-version from `package.json`, so those builds report the same number as the
-release; a plain `go build` reports `dev`.
+disabled, so the result is a single file with no dependencies. The version is
+the git tag the commit sits on (`git describe --tags --exact-match`, without
+its leading `v`), so those builds report the same number as the release they
+ship with; a build from any other commit — including a plain `go build` —
+reports `dev`. The release workflow sets `HB_SUNRISE_REQUIRE_VERSION=1`, so a
+release can never ship binaries labelled `dev`.
 
 ```sh
 go test ./...

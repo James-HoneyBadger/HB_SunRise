@@ -123,10 +123,11 @@ of effort:
 
 ### Phase 5 — release pipeline
 
-Copy Honey Ledger's pattern: `scripts/build-hb-sunrise.sh` already produces
-static binaries for five platforms; add a GitHub Actions workflow with a
-`build-hb-sunrise` job that uploads the artifacts to each release, as
-`.github/workflows/build-release.yml` does for the extractor.
+`scripts/build-hb-sunrise.sh` produces static binaries for five platforms, and
+`.github/workflows/release.yml` runs it on every `v*` tag, verifies the
+stamped version, generates `SHA256SUMS.txt` and uploads all five binaries and
+the checksums to the GitHub release — the same pattern Honey Ledger uses for
+the extractor.
 
 ## Testing strategy
 
@@ -143,8 +144,9 @@ static binaries for five platforms; add a GitHub Actions workflow with a
 ## Conventions
 
 - Module: `github.com/James-HoneyBadger/hb-sunrise`. License: GPL-3.0-or-later.
-- Version lives in `package.json`; `scripts/build-hb-sunrise.sh` stamps it into
-  `main.version`. A plain `go build` reports `dev`.
+- The git tag is the single source of version truth: the build script stamps
+  the tag it is built from into `main.version` via
+  `git describe --tags --exact-match`; any other build reports `dev`.
 - Exit codes: `0` success, `1` file could not be read/extracted/written, `2`
   bad option or format name.
 - Never overwrite an existing output file; never hide skipped rows.

@@ -17,6 +17,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          # The build script reads the tag with git describe, so the tags must
+          # be present; the default depth of 1 leaves them out.
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -25,7 +29,12 @@ jobs:
           cache: true
 
       - name: Build binaries for all platforms
+        env:
+          HB_SUNRISE_REQUIRE_VERSION: "1"
         run: ./scripts/build-hb-sunrise.sh dist
+
+      - name: Verify the stamped version
+        run: ./dist/hb-sunrise-linux-amd64 -version
 
       - name: Generate checksums
         run: (cd dist && sha256sum hb-sunrise-* > SHA256SUMS.txt)
