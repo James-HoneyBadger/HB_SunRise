@@ -20,34 +20,31 @@ HB SunRise resurrects archived, obsolete Microsoft Money files:
 
 ## What was extracted and how
 
-The scaffold mirrors the extractor's two-tier design:
+The scaffold mirrors the extractor's two-tier design, with the parser itself
+living in the shared [money-engine module](../../money-engine), which Honey
+Ledger consumes too:
 
 ```
 cmd/hb-sunrise/                  user interface: CLI + interactive Q&A
   main.go                        flags, prompts, error translation, exit codes
-  formats.go                     one write<Format> function per output format
+  formats.go                     format registry; writers come from money-engine/export
   main_test.go                   tests over a shared sample ExtractedData
-pkg/converters/msmoney/          the parser (no I/O, no UI knowledge)
-  microsoft_money_extract.go     public API: ExtractMicrosoftMoneyData(ctx, data)
-  microsoft_money_data_reader.go accounts, categories, transactions, splits
-  microsoft_money_backup_archive.go  .mbf cabinet handling with resource limits
-  microsoft_money_data_file_signature.go  MSISAM header check
-  msisam/                        the engine: header, pages, definitions, rows
+  pipeline_test.go               end-to-end tests over synthetic .mny/.mbf files
 pkg/core/                        Context interface + NullContext
-pkg/errs/                        Error type + the import error codes
-pkg/log/                         quiet-able logger (stdlib)
-pkg/models/                      TransactionType constants
-pkg/validators/                  ISO 4217 currency set
-scripts/build-hb-sunrise.sh      static cross-builds for 5 platforms
+pkg/log/                         quiet-able logger (stdlib), bound to the engine
 ```
+
+money-engine holds the parser (`msmoney`), the engine (`msisam`), the six
+output writers (`export`) and the synthetic file generator (`synthetic`); its
+README maps the extraction API onto this program.
 
 Rules that keep this working:
 
 - The parser takes `[]byte` and returns plain structs. It never opens files,
   prints, or knows about output formats. Any future GUI reuses it unchanged.
-- The parser reports through `core.Context` + `pkg/log` only; the command calls
-  `log.SetQuiet()` so nothing leaks into tool output.
-- The parser returns stable typed errors; only `main.go` turns them into the
+- The parser reports through its `Context` interface and the logger bound in
+  `main.go`; `log.SetQuiet()` silences those lines with everything else.
+- The parser returns stable sentinel errors; only `main.go` turns them into the
   user-facing messages. Keep that translation table current when errors are
   added.
 - Output files are never overwritten (`uniquePath` adds ` (n)`), and skipped
@@ -58,21 +55,23 @@ Rules that keep this working:
 
 ### Add an output format
 
-1. Add an entry to `allFormats` in [formats.go](../cmd/hb-sunrise/formats.go):
-   key, name, extension, description, and a `write func(io.Writer,
-   *msmoney.ExtractedData) error`.
+1. Add a writer to [`money-engine/export`](../../money-engine/export), then an
+   entry to `allFormats` in [formats.go](../cmd/hb-sunrise/formats.go): key,
+   name, extension, description, and a `write func(io.Writer,
+   *msmoney.ExtractedData) error` calling it.
 2. Follow the amount rules: signed from the account's point of view everywhere
    except `honeyledger`; transfers listed once with the receiving account, and
    in both accounts for QIF.
-3. Add a test in `main_test.go` using `sampleData()`.
+3. Add a test next to the writer in money-engine; the end-to-end pipeline test
+   covers the new format for free.
 
 ### Add an input reader
 
-Add a package under `pkg/converters/` with the same shape as `msmoney`:
+Add a package with the same shape as `msmoney`:
 `Extract<Format>Data(ctx, data []byte) (*ExtractedData, error)`. If it can be
 expressed with the same `ExtractedAccount` / `ExtractedTransaction` structs,
-every output format works for it for free — promote the structs to a shared
-package first, then register the new reader in `main.go`.
+every output format works for it for free — the structs already live in the
+shared money-engine module, so just register the new reader in `main.go`.
 
 ## The roadmap
 

@@ -9,6 +9,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -17,10 +18,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/James-HoneyBadger/hb-sunrise/pkg/converters/msmoney"
 	"github.com/James-HoneyBadger/hb-sunrise/pkg/core"
-	"github.com/James-HoneyBadger/hb-sunrise/pkg/errs"
 	"github.com/James-HoneyBadger/hb-sunrise/pkg/log"
+	"github.com/James-HoneyBadger/money-engine/msmoney"
 )
 
 const appName = "HB SunRise"
@@ -36,7 +36,37 @@ var extractData = msmoney.ExtractMicrosoftMoneyData
 
 func main() {
 	log.SetQuiet()
+
+	// The extraction reports its diagnostics through the same logger as the
+	// rest of the program, so SetQuiet silences those lines too.
+	msmoney.BindLog(msmoney.Logger{
+		Errorf: func(ctx msmoney.Context, format string, args ...any) {
+			log.Errorf(sunriseContext(ctx), format, args...)
+		},
+		Infof: func(ctx msmoney.Context, format string, args ...any) {
+			log.Infof(sunriseContext(ctx), format, args...)
+		},
+		Warnf: func(ctx msmoney.Context, format string, args ...any) {
+			log.Warnf(sunriseContext(ctx), format, args...)
+		},
+	})
+
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+}
+
+// sunriseContext narrows the engine's context back to the context type of this
+// program's log package. The program always passes its own context, so the
+// assertion holds; anything else logs without a context.
+func sunriseContext(ctx msmoney.Context) core.Context {
+	if ctx == nil {
+		return nil
+	}
+
+	if sunriseContext, ok := ctx.(core.Context); ok {
+		return sunriseContext
+	}
+
+	return nil
 }
 
 func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
@@ -267,19 +297,32 @@ func ask(reader *bufio.Reader, stdout io.Writer, prompt string) string {
 // cleanPath removes what a shell or file manager adds when a file is dragged
 // onto the program: surrounding single or double quotes, surrounding and
 // trailing whitespace, and the backslash-escaped spaces a Unix terminal
-// inserts. Windows paths keep their backslashes.
+// inserts. Windows paths keep their backslashes. A transformation is only
+// applied when the path as received does not exist, so a real file whose name
+// contains quotes or a backslash is still addressed, not silently replaced by
+// a different file.
 func cleanPath(path string) string {
 	path = strings.TrimSpace(path)
 
-	if len(path) >= 2 && (path[0] == '"' || path[0] == '\'') && path[len(path)-1] == path[0] {
+	quoted := len(path) >= 2 && (path[0] == '"' || path[0] == '\'') && path[len(path)-1] == path[0]
+
+	if quoted && !pathExists(path) {
 		path = strings.TrimSpace(path[1 : len(path)-1])
 	}
 
-	if !isWindowsPath(path) {
+	if !isWindowsPath(path) && !pathExists(path) {
 		path = unescapeSpaces(path)
 	}
 
 	return path
+}
+
+// pathExists reports whether the path names an existing file or directory, so
+// cleanPath leaves a real name alone.
+func pathExists(path string) bool {
+	_, err := os.Stat(path)
+
+	return err == nil
 }
 
 // isWindowsPath reports whether the path is a Windows drive path or a UNC
@@ -319,13 +362,17 @@ func unescapeSpaces(path string) string {
 
 // describeError explains a failure in terms of the file the user picked.
 func describeError(err error) string {
-	switch err.Error() {
-	case errs.ErrImportFileTypeNotSupported.Message:
+	switch {
+	case errors.Is(err, msmoney.ErrFileTypeNotSupported):
 		return "this is not a Microsoft Money data file (.mny) or backup (.mbf)"
-	case errs.ErrImportMicrosoftMoneyDataFileNotReadable.Message:
+	case errors.Is(err, msmoney.ErrDataFileNotReadable):
 		return "the file is damaged, or is not a complete Microsoft Money database"
-	case errs.ErrImportMicrosoftMoneyDataFileEncrypted.Message:
+	case errors.Is(err, msmoney.ErrDataFileEncrypted):
 		return "the file is password protected; remove the password in Microsoft Money and try again"
+	case errors.Is(err, msmoney.ErrBackupFileNotReadable):
+		return "the file is damaged, or is not a complete Microsoft Money backup"
+	case errors.Is(err, msmoney.ErrBackupFileTooLarge):
+		return "the file is too large to extract"
 	}
 
 	return err.Error()

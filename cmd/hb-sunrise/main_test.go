@@ -5,20 +5,17 @@ package main
 
 import (
 	"bytes"
-	"encoding/csv"
-	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/xuri/excelize/v2"
 
-	"github.com/James-HoneyBadger/hb-sunrise/pkg/converters/msmoney"
-	"github.com/James-HoneyBadger/hb-sunrise/pkg/core"
+	"github.com/James-HoneyBadger/money-engine/msmoney"
 )
 
 func sampleData() *msmoney.ExtractedData {
@@ -45,154 +42,6 @@ func TestParseFormats(t *testing.T) {
 
 	_, err = parseFormats("pdf")
 	assert.NotNil(t, err)
-}
-
-func TestFormatAmount(t *testing.T) {
-	assert.Equal(t, "12.34", formatAmount(1234))
-	assert.Equal(t, "-0.05", formatAmount(-5))
-	assert.Equal(t, "0.00", formatAmount(0))
-}
-
-func TestCSVKeepsAmountsSignedAndQuotesText(t *testing.T) {
-	var out bytes.Buffer
-	assert.Nil(t, writeCSV(&out, sampleData()))
-
-	rows, err := csv.NewReader(strings.NewReader(strings.TrimPrefix(out.String(), "\ufeff"))).ReadAll()
-	assert.Nil(t, err)
-	assert.Equal(t, 4, len(rows))
-	assert.Equal(t, "-12.34", rows[1][4])
-	assert.Equal(t, "5000.00", rows[2][4])
-	assert.Equal(t, "-100.00", rows[3][4])
-	assert.Equal(t, "Savings", rows[3][5])
-	assert.Equal(t, "Milk, \"2%\"\nand eggs", rows[1][8])
-}
-
-func TestHoneyLedgerCSVHasImportableLayout(t *testing.T) {
-	var out bytes.Buffer
-	assert.Nil(t, writeHoneyLedgerCSV(&out, sampleData()))
-
-	rows, err := csv.NewReader(&out).ReadAll()
-	assert.Nil(t, err)
-	assert.Equal(t, "Sub Category", rows[0][4])
-	assert.Equal(t, "2024-03-05 00:00:00", rows[1][0])
-	assert.Equal(t, "+00:00", rows[1][1])
-	assert.Equal(t, "12.34", rows[1][7])
-	assert.Equal(t, "Transfer", rows[3][2])
-	assert.Equal(t, "Savings", rows[3][8])
-	assert.Equal(t, "100.00", rows[3][10])
-}
-
-func TestJSONHasAccountsAndTransactions(t *testing.T) {
-	var out bytes.Buffer
-	assert.Nil(t, writeJSON(&out, sampleData()))
-
-	var document struct {
-		Accounts     []map[string]any `json:"accounts"`
-		Transactions []map[string]any `json:"transactions"`
-	}
-
-	assert.Nil(t, json.Unmarshal(out.Bytes(), &document))
-	assert.Equal(t, 3, len(document.Accounts))
-	assert.Equal(t, 3, len(document.Transactions))
-	assert.Equal(t, "-12.34", document.Transactions[0]["amount"])
-}
-
-func TestQIFWritesBothSidesOfATransfer(t *testing.T) {
-	var out bytes.Buffer
-	assert.Nil(t, writeQIF(&out, sampleData()))
-	text := out.String()
-
-	assert.Equal(t, 3, strings.Count(text, "!Account"))
-	assert.Contains(t, text, "D03/05/2024\nT-100.00\nL[Savings]\n^")
-	assert.Contains(t, text, "D03/05/2024\nT100.00\nL[Checking]\n^")
-	assert.Contains(t, text, "LFood:Groceries")
-	assert.Contains(t, text, "PMilk, \"2%\" and eggs")
-}
-
-func TestCSVNeutralizesFormulaPrefixes(t *testing.T) {
-	day := time.Date(2024, 3, 5, 0, 0, 0, 0, time.UTC)
-	data := &msmoney.ExtractedData{
-		Accounts: []msmoney.ExtractedAccount{{Name: "Checking", Currency: "USD"}},
-		Transactions: []msmoney.ExtractedTransaction{
-			{Time: day, Type: msmoney.ExtractedTypeExpense, Account: "=cmd|' /C calc'!A0", Currency: "USD", Amount: 1234, Category: "+Food", SubCategory: "@Sub", Memo: "=HYPERLINK(\"http://evil\")"},
-		},
-	}
-
-	var out bytes.Buffer
-	assert.Nil(t, writeCSV(&out, data))
-
-	rows, err := csv.NewReader(strings.NewReader(strings.TrimPrefix(out.String(), "\ufeff"))).ReadAll()
-	assert.Nil(t, err)
-	assert.Equal(t, "'=cmd|' /C calc'!A0", rows[1][2])
-	assert.Equal(t, "-12.34", rows[1][4], "amounts keep their sign and are never prefixed")
-	assert.Equal(t, "'+Food", rows[1][6])
-	assert.Equal(t, "'@Sub", rows[1][7])
-	assert.Equal(t, "'=HYPERLINK(\"http://evil\")", rows[1][8])
-}
-
-func TestHoneyLedgerCSVNeutralizesFormulaPrefixes(t *testing.T) {
-	day := time.Date(2024, 3, 5, 0, 0, 0, 0, time.UTC)
-	data := &msmoney.ExtractedData{
-		Accounts: []msmoney.ExtractedAccount{{Name: "Checking", Currency: "USD"}},
-		Transactions: []msmoney.ExtractedTransaction{
-			{Time: day, Type: msmoney.ExtractedTypeExpense, Account: "=cmd|' /C calc'!A0", Currency: "USD", Amount: 1234, Category: "+Food", SubCategory: "@Sub", Memo: "=HYPERLINK(\"http://evil\")"},
-		},
-	}
-
-	var out bytes.Buffer
-	assert.Nil(t, writeHoneyLedgerCSV(&out, data))
-
-	rows, err := csv.NewReader(&out).ReadAll()
-	assert.Nil(t, err)
-	assert.Equal(t, "'+Food", rows[1][3])
-	assert.Equal(t, "'@Sub", rows[1][4])
-	assert.Equal(t, "'=cmd|' /C calc'!A0", rows[1][5])
-	assert.Equal(t, "12.34", rows[1][7], "amounts are never prefixed")
-	assert.Equal(t, "'=HYPERLINK(\"http://evil\")", rows[1][13])
-}
-
-func TestXLSXStripsInvalidCharacters(t *testing.T) {
-	day := time.Date(2024, 3, 5, 0, 0, 0, 0, time.UTC)
-	data := &msmoney.ExtractedData{
-		Accounts: []msmoney.ExtractedAccount{{Name: "Bad\x01Name\uFFFE", Currency: "USD"}},
-		Transactions: []msmoney.ExtractedTransaction{
-			{Time: day, Type: msmoney.ExtractedTypeExpense, Account: "Checking", Currency: "USD", Amount: 1234, Memo: "line1\x01line2\nline3\uFFFF"},
-		},
-	}
-
-	var out bytes.Buffer
-	assert.Nil(t, writeXLSX(&out, data))
-
-	file, err := excelize.OpenReader(&out)
-	assert.Nil(t, err)
-
-	defer file.Close()
-
-	rows, err := file.GetRows("Transactions")
-	assert.Nil(t, err)
-	assert.Equal(t, "line1line2\nline3", rows[1][8])
-
-	accounts, err := file.GetRows("Accounts")
-	assert.Nil(t, err)
-	assert.Equal(t, "BadName", accounts[1][0])
-}
-
-func TestXLSXHasBothSheets(t *testing.T) {
-	var out bytes.Buffer
-	assert.Nil(t, writeXLSX(&out, sampleData()))
-
-	file, err := excelize.OpenReader(&out)
-	assert.Nil(t, err)
-
-	defer file.Close()
-
-	rows, err := file.GetRows("Transactions")
-	assert.Nil(t, err)
-	assert.Equal(t, 4, len(rows))
-
-	accounts, err := file.GetRows("Accounts")
-	assert.Nil(t, err)
-	assert.Equal(t, 4, len(accounts))
 }
 
 func TestWriteFormatNeverOverwrites(t *testing.T) {
@@ -263,6 +112,37 @@ func TestCleanPathStripsQuotesWhitespaceAndEscapedSpaces(t *testing.T) {
 	}
 }
 
+// TestCleanPathKeepsExistingNamesUntouched guards against cleanPath rewriting a
+// path into a different file that happens to exist: a file whose name really
+// contains a backslash and a space, or surrounding quote characters, must be
+// selected, not mangled.
+func TestCleanPathKeepsExistingNamesUntouched(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("backslash and quote characters cannot be part of a Windows file name")
+	}
+
+	dir := t.TempDir()
+
+	backslashName := filepath.Join(dir, `odd\ name.mny`)
+	require.NoError(t, os.WriteFile(backslashName, []byte("x"), 0o644))
+	assert.Equal(t, backslashName, cleanPath(backslashName))
+
+	quotedName := filepath.Join(dir, `"quoted".mny`)
+	require.NoError(t, os.WriteFile(quotedName, []byte("x"), 0o644))
+	assert.Equal(t, quotedName, cleanPath(quotedName))
+}
+
+// TestCleanPathUnescapesWhenOnlyTheUnescapedPathExists checks the drag-and-drop
+// case the transformation exists for: the terminal inserts "My\ File.mny" and
+// only "My File.mny" is on disk.
+func TestCleanPathUnescapesWhenOnlyTheUnescapedPathExists(t *testing.T) {
+	dir := t.TempDir()
+	real := filepath.Join(dir, "My File.mny")
+	require.NoError(t, os.WriteFile(real, []byte("x"), 0o644))
+
+	assert.Equal(t, real, cleanPath(filepath.Join(dir, `My\ File.mny`)))
+}
+
 // panicOnRead fails the test if anything tries to read from it, so a run that
 // must stay non-interactive cannot accidentally pause or ask a question.
 type panicOnRead struct{}
@@ -275,7 +155,7 @@ func (panicOnRead) Read([]byte) (int, error) {
 func stubExtract() func() {
 	original := extractData
 
-	extractData = func(ctx core.Context, data []byte) (*msmoney.ExtractedData, error) {
+	extractData = func(ctx msmoney.Context, data []byte) (*msmoney.ExtractedData, error) {
 		return sampleData(), nil
 	}
 

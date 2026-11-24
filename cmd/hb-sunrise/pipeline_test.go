@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/xuri/excelize/v2"
 
-	"github.com/James-HoneyBadger/hb-sunrise/pkg/converters/msmoney/synthetic"
+	"github.com/James-HoneyBadger/money-engine/synthetic"
 )
 
 // TestEndToEndPipelineWithSyntheticMoneyFile runs the complete extraction
