@@ -6,6 +6,7 @@
 `.mny` database directly — including ledgers written decades ago — and writes its
 accounts and transactions in the format you choose.
 
+[![CI](https://github.com/James-HoneyBadger/HB_SunRise/actions/workflows/ci.yml/badge.svg)](https://github.com/James-HoneyBadger/HB_SunRise/actions/workflows/ci.yml)
 **Free software** (GPL-3.0-or-later) · **Windows**, **macOS**, **Linux**
 
 HB SunRise is a standalone program for resurrecting archived, obsolete Microsoft

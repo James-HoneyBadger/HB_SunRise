@@ -1,0 +1,38 @@
+# SPDX-FileCopyrightText: 2020-2026 Honey Badger Universe
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build binaries for all platforms
+        run: ./scripts/build-hb-sunrise.sh dist
+
+      - name: Generate checksums
+        run: (cd dist && sha256sum hb-sunrise-* > SHA256SUMS.txt)
+
+      - name: Upload binaries and checksums to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/hb-sunrise-*
+            dist/SHA256SUMS.txt
