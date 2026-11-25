@@ -117,7 +117,13 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           mkdir -p dist
-          ditto -c -k --keepParent desktop/build/bin/hb-sunrise.app "dist/hb-sunrise-desktop-${{ matrix.name }}.zip"
+          # Wails names the bundle after wails.json's product name ("HB SunRise.app").
+          app="$(find desktop/build/bin -maxdepth 1 -name '*.app' -print -quit)"
+          if [ -z "$app" ]; then
+            echo "error: no .app bundle was produced" >&2
+            exit 1
+          fi
+          ditto -c -k --keepParent "$app" "dist/hb-sunrise-desktop-${{ matrix.name }}.zip"
 
       - name: Upload desktop application
         uses: actions/upload-artifact@v4
