@@ -220,3 +220,36 @@ func TestDryRunPrintsSummaryAndWritesNothing(t *testing.T) {
 	assert.NotContains(t, stdout.String(), "Press Enter")
 	assert.NotContains(t, stdout.String(), "sample.csv")
 }
+
+func TestRunPrintsValidationReport(t *testing.T) {
+	input := filepath.Join(t.TempDir(), "sample.mny")
+	require.NoError(t, os.WriteFile(input, []byte("dummy"), 0o644))
+	defer stubExtract()()
+
+	duplicate := sampleData()
+	duplicate.Transactions = append(duplicate.Transactions, duplicate.Transactions[0])
+	extractData = func(ctx msmoney.Context, data []byte) (*msmoney.ExtractedData, error) {
+		return duplicate, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	assert.Equal(t, 0, run([]string{"-validate", "-dry-run", input}, strings.NewReader(""), &stdout, &stderr))
+	assert.Contains(t, stdout.String(), "Validation: 1 confirmed")
+	assert.Contains(t, stdout.String(), "duplicate_transaction")
+}
+
+func TestRunPrintsDecodingDiagnostics(t *testing.T) {
+	input := filepath.Join(t.TempDir(), "sample.mny")
+	require.NoError(t, os.WriteFile(input, []byte("dummy"), 0o644))
+	defer stubExtract()()
+
+	damaged := sampleData()
+	damaged.Diagnostics = msmoney.ExtractedDiagnostics{UnresolvedRows: 3, Samples: []string{"row (definition page 4, page 9, slot 0): row slot cannot be resolved"}}
+	extractData = func(ctx msmoney.Context, data []byte) (*msmoney.ExtractedData, error) {
+		return damaged, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	assert.Equal(t, 0, run([]string{"-dry-run", input}, strings.NewReader(""), &stdout, &stderr))
+	assert.Contains(t, stdout.String(), "Decoding problems: 0 rows undecodable, 3 rows unresolved")
+}

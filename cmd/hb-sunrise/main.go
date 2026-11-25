@@ -76,6 +76,7 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 	formatList := flags.String("f", "", "output format(s), comma separated: "+formatKeys()+", or all")
 	outputDir := flags.String("o", "", "output folder (default: next to the input file)")
 	dryRun := flags.Bool("dry-run", false, "print the accounts, transactions, date range and skipped rows, and exit without writing files")
+	validate := flags.Bool("validate", false, "print the validation report for the extracted data")
 	listFormats := flags.Bool("list", false, "list the supported output formats and exit")
 	showVersion := flags.Bool("version", false, "print the version and exit")
 
@@ -155,6 +156,10 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 	}
 
 	printSummary(stdout, extracted)
+
+	if *validate {
+		printValidation(stdout, extracted)
+	}
 
 	if *dryRun {
 		return 0
@@ -244,6 +249,10 @@ func printSummary(stdout io.Writer, data *msmoney.ExtractedData) {
 
 	if data.Skipped > 0 {
 		fmt.Fprintf(stdout, "%d rows were left out: investment activity, split totals, and rows without an amount, account or date.\n", data.Skipped)
+	}
+
+	if !data.Diagnostics.IsEmpty() {
+		fmt.Fprintf(stdout, "Decoding problems: %s.\n", data.Diagnostics.Summary())
 	}
 
 	fmt.Fprintln(stdout)
@@ -360,6 +369,24 @@ func unescapeSpaces(path string) string {
 	return builder.String()
 }
 
+// printValidation writes the validation report for the extracted data, so a
+// user can see what the data holds beyond the export formats.
+func printValidation(stdout io.Writer, data *msmoney.ExtractedData) {
+	report := msmoney.ValidateTransactions(data)
+
+	if report.IsClean() {
+		fmt.Fprintln(stdout, "Validation found nothing to report.")
+
+		return
+	}
+
+	fmt.Fprintf(stdout, "Validation: %d confirmed, %d uncertain, %d informational findings\n", len(report.Confirmed()), len(report.Uncertain()), len(report.Findings)-len(report.Confirmed())-len(report.Uncertain()))
+
+	for _, finding := range report.Findings {
+		fmt.Fprintf(stdout, "  [%s] %s: %s\n", finding.Severity, finding.Kind, finding.Message)
+	}
+}
+
 // describeError explains a failure in terms of the file the user picked.
 func describeError(err error) string {
 	switch {
@@ -369,6 +396,8 @@ func describeError(err error) string {
 		return "the file is damaged, or is not a complete Microsoft Money database"
 	case errors.Is(err, msmoney.ErrDataFileEncrypted):
 		return "the file is password protected; remove the password in Microsoft Money and try again"
+	case errors.Is(err, msmoney.ErrDataFileUnsupportedVersion):
+		return "the file was written by Microsoft Money 2000 or earlier, whose layout is not supported; export it with a newer Money first"
 	case errors.Is(err, msmoney.ErrBackupFileNotReadable):
 		return "the file is damaged, or is not a complete Microsoft Money backup"
 	case errors.Is(err, msmoney.ErrBackupFileTooLarge):

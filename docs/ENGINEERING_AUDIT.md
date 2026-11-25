@@ -7,6 +7,7 @@ build on.
 
 Audited revision: `255d106` (main), 2026-11-24. All 6,250 lines of Go, the
 tests, the build script, both workflows and the documentation were inspected.
+Updated at the end of Phase 2 (see §10) with the defects the phase closed.
 
 ---
 
@@ -115,19 +116,18 @@ never touches the file system and never modifies the input buffer.
 
 ## 3. Confirmed defects
 
-1. **Silent row loss on decode failure.** `EachRow` and `Definitions` `continue`
-   past rows/definitions that fail to decode; `Catalog` skips malformed entries.
-   Nothing records that a row existed but could not be read. A damaged file can
-   therefore lose records with *no* signal, while `Skipped` only counts rows
-   that were decoded and then judged non-exportable. Violates the "no silent
-   financial data loss" principle and Phase 7's decoding-error provenance.
-   Fix: collect per-row decode errors into a diagnostics channel/report and
-   surface them in the validation report and the CLI.
-2. **Engine version is not enforced.** `Open` validates the magic but ignores
-   the engine version at `0x14`. Money 2000 and earlier files (2048-byte pages,
-   different version byte) are not detected; they fall through to confusing
-   parse failures instead of a clean "unsupported version" error. Phase 2
-   requires version detection; it exists in the data but is unused.
+1. ~~Silent row loss on decode failure.~~ **Fixed in Phase 2.** `msisam`
+   gained a `Diagnostics` sink (`SetDiagnostics`) recording corrupt and
+   unresolvable rows, corrupt definitions and unreadable catalog entries;
+   `EachRow` skips only rows actually marked deleted. The extraction surfaces
+   the report as `ExtractedData.Diagnostics`, both CLIs print it, and Honey
+   Ledger's importer logs it. A damaged file can no longer lose records
+   silently.
+2. ~~Engine version is not enforced.~~ **Fixed in Phase 2.** `Open` returns
+   `msisam.ErrUnsupportedVersion` for any engine version other than the Jet 4
+   layout; the extraction maps it to `ErrDataFileUnsupportedVersion` and both
+   CLIs explain it to the user. A Money 2000-era file is still not read, but
+   it is now reported as what it is.
 3. **Code-page is decoded but never used.** `CodePage()` reads the Windows code
    page, yet all text is decoded as UTF-16. Non-ASCII text that Money stores
    single-byte encoded under a non-Western code page will decode incorrectly.
@@ -231,31 +231,33 @@ Wails "open file → progress → table" spike, package it for all three OSes an
 verify the Linux WebKitGTK story (the one real packaging risk) before Phase 3
 proceeds. If Linux packaging proves brittle, fall back to Fyne.
 
-### 7.2 Engine separation (Phase 2)
+### 7.2 Engine separation (Phase 2) — delivered
 
-The decoding core is already interface-neutral (takes `[]byte`, returns plain
-structs, never touches I/O) and is byte-identical to the copy Honey Ledger
-carries. The missing pieces are the *interfaces* a workstation and a ledger
-both need:
+The interfaces now exist with callers, and are documented in
+[docs/ENGINE_INTERFACES.md](ENGINE_INTERFACES.md):
 
-- `Recognizer` — file/backup identification and version detection (defect 2).
-- `Decoder` — page/table/schema/record decoding with **per-row diagnostics**
-  (defect 1) instead of silent skips.
-- `Extractor` — the existing normalization, plus a **progress channel** and
-  **context cancellation**; keep the synchronous API as a convenience wrapper.
-- `Validator` — the Phase 6 checks, producing a report that separates confirmed
-  findings from uncertain interpretations.
-- `Exporter` — the existing six writers behind one interface.
-- Licensing: both codebases are GPL-3.0-or-later with identical headers;
-  sharing through `hb-money-engine` is license-compatible. Until that module is
-  published, keep the current synchronized-copy discipline and do **not**
-  introduce divergent decoding behavior in either application.
+- **Recognition** — `IsMicrosoftMoneyDataFile` / `IsMicrosoftMoneyBackupFile`.
+- **Version detection** — enforced in `Open` (defect 2 closed).
+- **Decoding** — pages, tables, schema and records, with a `Diagnostics` sink
+  instead of silent skips (defect 1 closed) and `EachRow(ctx, …)` cancellation.
+- **Normalization** — `ExtractMicrosoftMoneyDataWithOptions` with per-phase
+  progress and `ExtractedDiagnostics` in the result.
+- **Validation** — `ValidateTransactions` with confirmed/uncertain findings
+  (duplicates, transfer fallbacks, inactive accounts); the report repairs
+  nothing.
+- **Export** — the `export.Formats()` registry, which both CLIs build their
+  menus from.
+- **Recovery** — specified, not implemented (Phase 7).
+
+The engine remains byte-identical to Honey Ledger's copy; both applications
+were synchronized and both suites pass. Licensing is compatible (GPL-3.0-or-
+later, identical headers).
 
 ### 7.3 Sequencing
 
-1. Fix defects 1 and 2 (diagnostics channel; version gate) — they are
-   prerequisites for every later phase and cheap relative to their risk.
-2. Build the `Validator` and the validation report.
+1. ~~Fix defects 1 and 2~~ — done in Phase 2.
+2. Build the full `Validator` surface (balances, split totals, symmetry, date
+   ranges, orphans) on the existing report.
 3. Wails packaging spike, then the Phase 3 GUI skeleton on the interfaces.
 4. Deep decoding (Phase 5) table by table, each behind real-file verification.
 
@@ -270,6 +272,13 @@ both need:
   rows, empty tables, and a password-protected file.
 - After defect 2 lands, obtain a Money 2000-era file to confirm the version
   gate reports it cleanly.
+
+## 10. Phase 2 update (2026-11-24)
+
+Defects 1 and 2 are closed, as noted in §3. The engine interfaces are
+delivered and documented in [docs/ENGINE_INTERFACES.md](ENGINE_INTERFACES.md);
+both applications carry the synchronized engine and are green. Test counts
+after Phase 2: see §1; the three real-file skips remain, unchanged.
 
 ## 9. Repository hygiene observed
 
