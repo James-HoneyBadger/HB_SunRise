@@ -131,9 +131,12 @@ of effort:
 
 `scripts/build-hb-sunrise.sh` produces static binaries for five platforms, and
 `.github/workflows/release.yml` runs it on every `v*` tag, verifies the
-stamped version, generates `SHA256SUMS.txt` and uploads all five binaries and
-the checksums to the GitHub release — the same pattern Honey Ledger uses for
-the extractor.
+stamped version and generates `SHA256SUMS.txt`. The same workflow builds the
+Wails desktop application on Linux, Windows and macOS (Apple silicon and
+Intel), so every release carries the desktop build next to the CLI binaries and
+the checksums — the same pattern Honey Ledger uses for the extractor. The
+macOS build is published as a zipped `.app`; the desktop builds are unsigned,
+like the CLI binaries.
 
 ## Testing strategy
 
