@@ -373,6 +373,19 @@ func unescapeSpaces(path string) string {
 // user can see what the data holds beyond the export formats.
 func printValidation(stdout io.Writer, data *msmoney.ExtractedData) {
 	report := msmoney.ValidateTransactions(data)
+	summary := report.Summary
+
+	fmt.Fprintf(stdout, "Validation summary: %d transactions (%d income, %d expenses, %d transfers)", summary.TransactionCount, summary.IncomeCount, summary.ExpenseCount, summary.TransferCount)
+
+	if summary.IncomeTotal != 0 || summary.ExpenseTotal != 0 {
+		fmt.Fprintf(stdout, ", income %d.%02d, expenses %d.%02d", summary.IncomeTotal/100, summary.IncomeTotal%100, summary.ExpenseTotal/100, summary.ExpenseTotal%100)
+	}
+
+	if !summary.Earliest.IsZero() {
+		fmt.Fprintf(stdout, ", %s to %s", summary.Earliest.Format("2006-01-02"), summary.Latest.Format("2006-01-02"))
+	}
+
+	fmt.Fprintln(stdout)
 
 	if report.IsClean() {
 		fmt.Fprintln(stdout, "Validation found nothing to report.")

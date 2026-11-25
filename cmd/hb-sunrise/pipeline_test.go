@@ -36,7 +36,7 @@ func TestEndToEndPipelineWithSyntheticMoneyFile(t *testing.T) {
 		assert.FileExists(t, filepath.Join(outDir, name), "format %s must be written", name)
 	}
 
-	assert.Contains(t, stdout.String(), "Found 2 accounts and 3 transactions")
+	assert.Contains(t, stdout.String(), "Found 3 accounts and 3 transactions")
 	assert.Contains(t, stdout.String(), "3 rows were left out")
 	assert.Contains(t, stdout.String(), "Done.")
 
@@ -78,7 +78,7 @@ func TestEndToEndPipelineWithSyntheticMoneyFile(t *testing.T) {
 	}
 
 	require.NoError(t, json.Unmarshal([]byte(readFile(t, filepath.Join(outDir, "sample.json"))), &document))
-	assert.Equal(t, 2, len(document.Accounts))
+	assert.Equal(t, 3, len(document.Accounts))
 	assert.Equal(t, 3, len(document.Transactions))
 	assert.Equal(t, 3, document.Skipped)
 	assert.Equal(t, "Groceries", document.Transactions[0].Subcategory)
@@ -96,8 +96,8 @@ func TestEndToEndPipelineWithSyntheticMoneyFile(t *testing.T) {
 
 	accounts, err := workbook.GetRows("Accounts")
 	require.NoError(t, err)
-	assert.Equal(t, 3, len(accounts), "header plus two accounts")
-	assert.Equal(t, "Savings", accounts[2][0])
+	assert.Equal(t, 4, len(accounts), "header plus three accounts")
+	assert.Equal(t, "Savings", accounts[3][0])
 }
 
 // TestEndToEndPipelineWithSyntheticBackupFile runs the same pipeline on a
@@ -114,7 +114,7 @@ func TestEndToEndPipelineWithSyntheticBackupFile(t *testing.T) {
 	assert.Equal(t, 0, run([]string{"-f", "json,csv", "-o", outDir, input}, strings.NewReader(""), &stdout, &stderr))
 	assert.FileExists(t, filepath.Join(outDir, "sample.json"))
 	assert.FileExists(t, filepath.Join(outDir, "sample.csv"))
-	assert.Contains(t, stdout.String(), "Found 2 accounts and 3 transactions")
+	assert.Contains(t, stdout.String(), "Found 3 accounts and 3 transactions")
 	assert.Contains(t, stdout.String(), "3 rows were left out")
 }
 
