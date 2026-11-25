@@ -54,26 +54,37 @@ msmoney.ExtractMicrosoftMoneyData(ctx, data) (*ExtractedData, error)
 msmoney.ExtractMicrosoftMoneyDataWithOptions(ctx, data, ExtractionOptions{Progress: ...})
 ```
 
-`ExtractedData` carries accounts, transactions (splits flattened, transfers
-matched, amounts in hundredths as integers), the skipped-row count, and an
-`ExtractedDiagnostics` report of decoding problems. Progress reports phases
-(`opening`, `reading tables`, `transactions`, `flattening`) with done/total
-counts.
+`ExtractedData` carries:
+
+- accounts with name, currency, and the file's closed and hidden flags,
+- transactions (splits flattened with `Split` provenance, transfers matched
+  with `TransferAmount`, payees from the `PAY` table, amounts in hundredths as
+  integers),
+- the skipped-row count, and
+- an `ExtractedDiagnostics` report of decoding problems: each corrupt
+  definition counts once, rows and definitions never fail silently, and the
+  bare catalog definition page is not corruption.
+
+Progress reports phases (`opening`, `reading tables`, `transactions`,
+`flattening`) with done/total counts, and cancellation travels through the
+context.
 
 ## Validation
 
 ```go
 report := msmoney.ValidateTransactions(data)
 report.Confirmed() / report.Uncertain()   // findings by certainty
+report.Summary                            // counts, totals, date range
 ```
 
 Findings carry a severity that distinguishes confirmed facts (exact
-duplicates) from uncertain interpretations (a transfer whose receiving side
-fell back to the source amount). The report never repairs data: discrepancies
-are explained, never patched with invented transactions. See
-[`validation.go`](../pkg/converters/msmoney/validation.go) for the kinds in
-scope today; the Phase 6 checks (balance, symmetry, split totals, date ranges,
-orphans) extend this report.
+duplicates, split totals that do not match their fragments, broken split
+references, transfers into accounts the file does not hold) from uncertain
+interpretations (a transfer whose receiving side fell back to the source
+amount, same-currency transfers whose sides differ). The report never repairs
+data: discrepancies are explained, never patched with invented transactions.
+`Summary` is a calculation over the transactions the file holds — it is not a
+Money account balance, because opening balances are not decoded.
 
 ## Export
 
@@ -84,6 +95,9 @@ err := export.Write(key, w, source, data) // one entry point for all six formats
 
 The CLI's `allFormats` is built from `Formats()`, so the menu and the writers
 cannot diverge. Export bytes are frozen compatibility (§AGENTS.md rule 8).
+QIF writes the payee on the `P` line and the memo on `M` when both exist;
+JSON carries the payee and the account flags; the CSV, TSV, Honey Ledger CSV
+and XLSX layouts are unchanged.
 
 ## Recovery (Phase 7, specification)
 

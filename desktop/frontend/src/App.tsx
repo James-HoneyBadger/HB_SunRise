@@ -12,7 +12,7 @@ import {
 import type { ExtractionView, Progress } from './bindings'
 import { useVirtual } from './virtual'
 import RawInspector from './Raw'
-import { IncomeVersusExpense, CategoryBars, CumulativeLine, monthlySeries, spendingByCategory, cumulativeByAccount } from './charts'
+import { IncomeVersusExpense, CategoryBars, CumulativeLine, monthlySeries, spendingByCategory, spendingByPayee, cumulativeByAccount } from './charts'
 
 type Tab = 'overview' | 'accounts' | 'transactions' | 'categories' | 'payees' | 'transfers' | 'splits' | 'reports' | 'validation' | 'raw'
 
@@ -145,6 +145,7 @@ export default function App() {
 
   const monthly = useMemo(() => (view ? monthlySeries(view.transactions) : []), [view])
   const categories = useMemo(() => (view ? spendingByCategory(view.transactions, 10) : []), [view])
+  const payees = useMemo(() => (view ? spendingByPayee(view.transactions, 10) : []), [view])
   const cumulative = useMemo(
     () => (view ? cumulativeByAccount(view.transactions, reportAccount) : []),
     [view, reportAccount],
@@ -524,6 +525,10 @@ export default function App() {
                 <div className="card">
                   <h2>Spending by category</h2>
                   {categories.length > 0 ? <CategoryBars slices={categories} /> : <p className="muted">No expenses to chart.</p>}
+                </div>
+                <div className="card">
+                  <h2>Spending by payee</h2>
+                  {payees.length > 0 ? <CategoryBars slices={payees} title="Spending by payee" /> : <p className="muted">No expenses with a payee to chart.</p>}
                 </div>
                 <div className="card">
                   <h2>Cumulative change from the transactions in the file</h2>

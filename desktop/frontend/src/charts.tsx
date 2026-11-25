@@ -63,6 +63,22 @@ export function spendingByCategory(transactions: TransactionView[], limit: numbe
     .slice(0, limit)
 }
 
+// spendingByPayee sums expenses by the payee the file names, largest first.
+export function spendingByPayee(transactions: TransactionView[], limit: number): CategorySlice[] {
+  const totals = new Map<string, number>()
+
+  for (const transaction of transactions) {
+    if (transaction.type !== 'Expense' || !transaction.payee) continue
+
+    totals.set(transaction.payee, (totals.get(transaction.payee) ?? 0) + transaction.amount)
+  }
+
+  return [...totals.entries()]
+    .map(([name, total]) => ({ name, total }))
+    .sort((left, right) => right.total - left.total)
+    .slice(0, limit)
+}
+
 // cumulativeByAccount computes the running balance change each account's
 // transactions in the file imply. It is a calculation over the decoded
 // transactions, not a Money account balance: the file's opening balances are
@@ -140,10 +156,11 @@ export function IncomeVersusExpense({ months }: BarChartProps) {
 
 interface HBarChartProps {
   slices: CategorySlice[]
+  title?: string
 }
 
-// CategoryBars draws the largest spending categories as horizontal bars.
-export function CategoryBars({ slices }: HBarChartProps) {
+// CategoryBars draws the largest spending slices as horizontal bars.
+export function CategoryBars({ slices, title = 'Spending by category' }: HBarChartProps) {
   const width = 720
   const row = 30
   const label = 220
@@ -151,7 +168,7 @@ export function CategoryBars({ slices }: HBarChartProps) {
   const max = Math.max(1, ...slices.map((slice) => slice.total))
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="chart" role="img" aria-label="Spending by category">
+    <svg viewBox={`0 0 ${width} ${height}`} className="chart" role="img" aria-label={title}>
       {slices.map((slice, index) => {
         const y = index * row + 10
         const length = (slice.total / max) * (width - label - 90)

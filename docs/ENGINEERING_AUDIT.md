@@ -31,9 +31,11 @@ carries), has no GUI, and is fully offline.
 
 ### Test status (run fresh, `go test -count=1 ./...`)
 
-- **64 tests PASS** across `msisam`, `msmoney`, `export` and the CLI (including
-  the end-to-end pipeline tests over synthetic `.mny`/`.mbf` files, the
-  malformed-input hardening tests, and the cross-currency transfer tests).
+- **83 tests PASS** in the root module across `msisam`, `msmoney`, `export`
+  and the CLI, plus **6 desktop-module tests** (including the end-to-end
+  pipeline tests over synthetic `.mny`/`.mbf` files, the malformed-input
+  hardening tests, the cross-currency transfer tests, and the workspace
+  derivation tests).
 - **3 tests SKIP** and are therefore **not validated**:
   - `TestRealDatabaseExtract` (`msmoney`)
   - `TestOpenRealDatabase`, `TestRealDatabaseTables` (`msisam`)
@@ -162,16 +164,18 @@ never touches the file system and never modifies the input buffer.
 ## 4. Unsupported record types and missing features
 
 Everything below is *not decoded* today. The program honestly skips investments
-and counts them; every other Money table is simply never opened.
+and counts them; every other Money table is simply never opened. The Raw
+inspection workspace in the desktop app still exposes their rows and columns
+for investigation, and unknown fields are never discarded silently.
 
 | Area | Status |
 |---|---|
 | Investments (purchases/sales, lots, holdings, dividends, fees) | Rows with a security handle are skipped and counted |
 | Securities (tickers, CUSIP, prices, exchange rates history) | Not read |
 | Budgets (`BGT`), scheduled/recurring transactions, bills | Not read |
-| Payees and payee metadata | Not read |
+| Payees and payee metadata | Name decoded (`PAY` + `TRN.hpay`); addresses and other payee columns not read |
 | Reconciliation state and opening balances | Not read |
-| Account metadata (type, closed/archived, hidden) | Only name + currency |
+| Account metadata | Name, currency, closed and hidden flags decoded; type and archive flag not read |
 | Exchange rates between currencies in the file | Not read |
 | Deep category nesting (3+ levels) | Collapsed to two levels |
 | Money 2000 and earlier (2048-byte layout) | Not detected, see defect 2 |
@@ -182,20 +186,25 @@ Do not claim support for any of the above until real-file-verified (§8).
 ## 5. Data-integrity risks
 
 - **Defect 1** (silent decode loss) is the highest-severity item: it can
-  silently drop financial records.
-- **No source hash or engine version is recorded in outputs.** JSON records the
-  exporter name and version but not the SHA-256 of the input or the decoder
-  version. Phase 7 requires both for provenance.
+  silently drop financial records. Closed in Phase 2 (diagnostics), hardened
+  later: a corrupt definition is now counted once and the catalog's bare
+  definition page is never counted as corruption.
+- **Source hash and engine version provenance.** The desktop app records the
+  SHA-256 of the input with every extraction; the exporters record the
+  exporter name and version. The exporters do not embed the input hash in the
+  exported file itself.
 - **Skipped rows are only a count.** There is no list of *what* was skipped and
-  why (investment vs. split total vs. missing amount/account/date). A
-  validation report cannot be built from the current `Skipped int`.
-- **No validation pass.** Nothing cross-checks account balances, split totals,
-  transfer symmetry, date ranges, duplicates, orphans, or that the number of
-  decoded rows equals the table's declared row count. Phase 6 is entirely
-  unbuilt.
-- **No progress or cancellation.** Extraction is synchronous and atomic. For
-  large files the GUI would freeze; a 40,000-row file takes seconds today but a
-  future deep decoder must report progress.
+  why (investment vs. split total vs. missing amount/account/date). The count
+  is shown in both CLIs and the desktop overview.
+- **Validation.** Delivered: duplicates, transfer amount fallbacks and
+  same-currency mismatches, orphan transfer accounts, accounts without
+  transactions, split totals versus fragment sums, broken split references,
+  and a calculated summary (counts, totals, date range). Account balances and
+  opening/closing balances cannot be validated until those records are
+  decoded.
+- **Progress and cancellation.** Delivered: `EachRow(ctx, …)` honours
+  cancellation and the extraction reports phases; the desktop app has a
+  progress bar and a cancel button.
 
 ## 6. What is strong and must be preserved
 
@@ -289,6 +298,27 @@ Defects 1 and 2 are closed, as noted in §3. The engine interfaces are
 delivered and documented in [docs/ENGINE_INTERFACES.md](ENGINE_INTERFACES.md);
 both applications carry the synchronized engine and are green. Test counts
 after Phase 2: see §1; the three real-file skips remain, unchanged.
+
+## 11. Payees, account flags, and split-integrity validation (2026-11-24)
+
+Delivered in both applications:
+
+- `PAY` payees and the `TRN.hpay` column decode; `ExtractedTransaction.Payee`
+  feeds the QIF `P` line, the JSON export, Honey Ledger's description
+  fallback, and the desktop Payees workspace.
+- `ACCT.fClosed` and `ACCT.fHidden` decode into `ExtractedAccount` and are
+  shown as badges in the desktop Accounts workspace.
+- Validation gained split checks (fragment sums versus the stored parent
+  total; broken split references) and a summary of counts, income and expense
+  totals, and the date range. The desktop Validation workspace shows the
+  summary strip; the CLI `-validate` prints it first.
+- Diagnostics no longer count the same corrupt definition once per table
+  lookup, and the bare catalog definition page is never counted as corruption.
+- The desktop Reports workspace gained a spending-by-payee chart.
+
+Remaining gated on real-file verification (§8): investments, securities,
+budgets, scheduled transactions, reconciliation state, opening balances,
+exchange rates, and deep category nesting.
 
 ## 9. Repository hygiene observed
 
