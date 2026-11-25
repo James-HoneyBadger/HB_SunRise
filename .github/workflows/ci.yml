@@ -65,8 +65,8 @@ jobs:
         working-directory: desktop
         run: |
           export PATH="$PATH:$(go env GOPATH)/bin"
-          wails generate module
           npm --prefix frontend ci
           npm --prefix frontend run build
+          wails generate module
           wails build -tags webkit2_41 -skipbindings
           go vet ./...
