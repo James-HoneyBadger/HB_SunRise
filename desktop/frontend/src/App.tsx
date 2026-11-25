@@ -10,8 +10,10 @@ import {
   ClearRecentFiles,
 } from '../wailsjs/go/main/App'
 import type { ExtractionView, Progress } from './bindings'
+import { useVirtual } from './virtual'
+import { IncomeVersusExpense, CategoryBars, CumulativeLine, monthlySeries, spendingByCategory, cumulativeByAccount } from './charts'
 
-type Tab = 'overview' | 'accounts' | 'transactions' | 'validation' | 'raw'
+type Tab = 'overview' | 'accounts' | 'transactions' | 'reports' | 'validation' | 'raw'
 
 const FORMATS: { key: string; name: string }[] = [
   { key: 'csv', name: 'CSV' },
@@ -133,8 +135,19 @@ export default function App() {
     })
   }, [view, query, sort])
 
+  const [reportAccount, setReportAccount] = useState('')
+
   const confirmed = view?.validation.filter((f) => f.severity === 'confirmed').length ?? 0
   const uncertain = view?.validation.filter((f) => f.severity === 'uncertain').length ?? 0
+
+  const virtual = useVirtual(transactions.length, 34)
+
+  const monthly = useMemo(() => (view ? monthlySeries(view.transactions) : []), [view])
+  const categories = useMemo(() => (view ? spendingByCategory(view.transactions, 10) : []), [view])
+  const cumulative = useMemo(
+    () => (view ? cumulativeByAccount(view.transactions, reportAccount) : []),
+    [view, reportAccount],
+  )
 
   const diagnosticsEmpty =
     view === null || (view.diagnostics.CorruptRows === 0 && view.diagnostics.UnresolvedRows === 0 && view.diagnostics.CorruptDefinitions === 0 && view.diagnostics.UnknownCatalogEntries === 0)
@@ -151,7 +164,7 @@ export default function App() {
         </div>
 
         <nav>
-          {(['overview', 'accounts', 'transactions', 'validation', 'raw'] as Tab[]).map((key) => (
+          {(['overview', 'accounts', 'transactions', 'reports', 'validation', 'raw'] as Tab[]).map((key) => (
             <button key={key} className={tab === key ? 'nav active' : 'nav'} disabled={!view && key !== 'overview'} onClick={() => setTab(key)}>
               {key[0].toUpperCase() + key.slice(1)}
               {key === 'validation' && !view && <span className="hint"> </span>}
@@ -324,49 +337,75 @@ export default function App() {
                     {transactions.length} of {view.transactions.length} transactions
                   </span>
                 </div>
-                <table>
-                  <thead>
-                    <tr>
-                      <th className="sortable" onClick={() => setSort({ field: 'time', dir: sort.field === 'time' ? ((sort.dir * -1) as 1 | -1) : 1 })}>
-                        Date {sort.field === 'time' ? (sort.dir === 1 ? '↑' : '↓') : ''}
-                      </th>
-                      <th>Type</th>
-                      <th>Account</th>
-                      <th className="sortable" onClick={() => setSort({ field: 'amount', dir: sort.field === 'amount' ? ((sort.dir * -1) as 1 | -1) : 1 })}>
-                        Amount {sort.field === 'amount' ? (sort.dir === 1 ? '↑' : '↓') : ''}
-                      </th>
-                      <th>Transfer</th>
-                      <th>Category</th>
-                      <th>Memo</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {transactions.map((t, index) => (
-                      <tr key={index}>
-                        <td className="mono">{t.time}</td>
-                        <td>
+                <div className="virt-head">
+                  <span className="sortable" onClick={() => setSort({ field: 'time', dir: sort.field === 'time' ? ((sort.dir * -1) as 1 | -1) : 1 })}>
+                    Date {sort.field === 'time' ? (sort.dir === 1 ? '↑' : '↓') : ''}
+                  </span>
+                  <span>Type</span>
+                  <span>Account</span>
+                  <span className="amount sortable" onClick={() => setSort({ field: 'amount', dir: sort.field === 'amount' ? ((sort.dir * -1) as 1 | -1) : 1 })}>
+                    Amount {sort.field === 'amount' ? (sort.dir === 1 ? '↑' : '↓') : ''}
+                  </span>
+                  <span>Transfer</span>
+                  <span>Category</span>
+                  <span>Memo</span>
+                </div>
+                <div className="virt" ref={virtual.containerRef} onScroll={virtual.onScroll}>
+                  <div style={{ height: virtual.totalHeight, position: 'relative' }}>
+                    {transactions.slice(virtual.start, virtual.end).map((t, index) => (
+                      <div className="virt-row" key={virtual.start + index} style={{ transform: `translateY(${virtual.offsetTop + index * 34}px)` }}>
+                        <span className="mono">{t.time}</span>
+                        <span>
                           <span className={`chip ${t.type.toLowerCase()}`}>{t.type}</span>
-                        </td>
-                        <td>{t.account}</td>
-                        <td className="mono amount">{amountOf(t.amount)}</td>
-                        <td>
+                        </span>
+                        <span>{t.account}</span>
+                        <span className="mono amount">{amountOf(t.amount)}</span>
+                        <span>
                           {t.transferAccount && (
                             <span className="muted">
                               {t.transferAccount}
                               {t.transferAmount > 0 && ` · ${amountOf(t.transferAmount)}`}
                             </span>
                           )}
-                        </td>
-                        <td>
+                        </span>
+                        <span>
                           {t.category && <span>{t.category}</span>}
                           {t.category && t.subCategory && <span className="muted"> / {t.subCategory}</span>}
                           {!t.category && t.subCategory && <span>{t.subCategory}</span>}
-                        </td>
-                        <td className="muted">{t.memo}</td>
-                      </tr>
+                        </span>
+                        <span className="muted">{t.memo}</span>
+                      </div>
                     ))}
-                  </tbody>
-                </table>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {tab === 'reports' && (
+              <section className="grid">
+                <div className="card wide">
+                  <h2>Income versus expenses</h2>
+                  {monthly.length > 0 ? <IncomeVersusExpense months={monthly} /> : <p className="muted">No income or expense transactions to chart.</p>}
+                </div>
+                <div className="card">
+                  <h2>Spending by category</h2>
+                  {categories.length > 0 ? <CategoryBars slices={categories} /> : <p className="muted">No expenses to chart.</p>}
+                </div>
+                <div className="card">
+                  <h2>Cumulative change from the transactions in the file</h2>
+                  <select value={reportAccount} onChange={(e) => setReportAccount(e.target.value)}>
+                    <option value="">All accounts</option>
+                    {view.accounts.map((account) => (
+                      <option key={account.name} value={account.name}>
+                        {account.name}
+                      </option>
+                    ))}
+                  </select>
+                  <CumulativeLine points={cumulative} />
+                  <p className="muted small">
+                    Calculated from the transactions this file holds; it is not a Money account balance, because opening balances are not decoded.
+                  </p>
+                </div>
               </section>
             )}
 

@@ -13,6 +13,8 @@
   --chip-income: #e5f4e7;
   --chip-expense: #fdeaea;
   --chip-transfer: #e8eef9;
+  --income: #3e9c55;
+  --expense: #c0504d;
 }
 
 :root[data-theme='dark'] {
@@ -29,6 +31,8 @@
   --chip-income: #1d3322;
   --chip-expense: #3a2020;
   --chip-transfer: #1d2938;
+  --income: #4caf68;
+  --expense: #d9706c;
 }
 
 * {
@@ -455,4 +459,63 @@ td.amount {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+/* Virtualized transaction grid */
+.virt-head,
+.virt-row {
+  display: grid;
+  grid-template-columns: 96px 82px minmax(130px, 1fr) 110px minmax(130px, 1.1fr) minmax(140px, 1.3fr) minmax(140px, 1.6fr);
+  gap: 8px;
+  align-items: center;
+  padding: 0 12px;
+}
+
+.virt-head {
+  color: var(--muted);
+  font-weight: 600;
+  border-bottom: 1px solid var(--line);
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+
+.virt {
+  height: 480px;
+  overflow-y: auto;
+  position: relative;
+}
+
+.virt-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 34px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.virt-row > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Charts */
+.chart {
+  width: 100%;
+  height: auto;
+  display: block;
+  margin-top: 8px;
+}
+
+.axis {
+  font-size: 10px;
+  fill: var(--muted);
+}
+
+.virt-head span.sortable {
+  cursor: pointer;
+  user-select: none;
 }
