@@ -509,21 +509,23 @@ func currencyOf(accounts []msmoney.ExtractedAccount, name string) string {
 	return ""
 }
 
-// RecentFiles returns the most recently opened files, newest first.
+// RecentFiles returns the most recently opened files, newest first. It returns
+// an empty list, never nil: a nil Go slice becomes JSON null, and the window
+// reads the list before it can render anything.
 func (a *App) RecentFiles() []string {
+	recent := make([]string, 0, maxRecentFiles)
+
 	path, err := recentStore()
 
 	if err != nil {
-		return nil
+		return recent
 	}
 
 	content, err := os.ReadFile(path)
 
 	if err != nil {
-		return nil
+		return recent
 	}
-
-	recent := make([]string, 0, maxRecentFiles)
 
 	for _, line := range strings.Split(string(content), "\n") {
 		if line = strings.TrimSpace(line); line != "" {

@@ -51,7 +51,9 @@ export default function App() {
   const [sort, setSort] = useState<{ field: 'time' | 'amount' | 'account'; dir: 1 | -1 }>({ field: 'time', dir: 1 })
 
   const refreshRecent = useCallback(() => {
-    RecentFiles().then(setRecent).catch(() => setRecent([]))
+    RecentFiles()
+      .then((list) => setRecent(list ?? []))
+      .catch(() => setRecent([]))
   }, [])
 
   useEffect(() => {
