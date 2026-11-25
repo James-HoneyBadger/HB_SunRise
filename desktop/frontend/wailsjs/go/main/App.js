@@ -14,6 +14,14 @@ export function Export(arg1, arg2) {
   return window['go']['main']['App']['Export'](arg1, arg2);
 }
 
+export function Inspect(arg1) {
+  return window['go']['main']['App']['Inspect'](arg1);
+}
+
+export function InspectRows(arg1, arg2, arg3) {
+  return window['go']['main']['App']['InspectRows'](arg1, arg2, arg3);
+}
+
 export function OpenFileDialog() {
   return window['go']['main']['App']['OpenFileDialog']();
 }

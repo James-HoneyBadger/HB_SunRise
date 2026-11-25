@@ -14,6 +14,28 @@ export namespace main {
 	        this.currency = source["currency"];
 	    }
 	}
+	export class columnView {
+	    name: string;
+	    type: string;
+	    fixed: boolean;
+	    number: number;
+	    offset: number;
+	    size: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new columnView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.type = source["type"];
+	        this.fixed = source["fixed"];
+	        this.number = source["number"];
+	        this.offset = source["offset"];
+	        this.size = source["size"];
+	    }
+	}
 	export class findingView {
 	    severity: string;
 	    kind: string;
@@ -128,7 +150,163 @@ export namespace main {
 		    return a;
 		}
 	}
+	export class fieldView {
+	    column: string;
+	    type: string;
+	    value: string;
+	    null: boolean;
 	
+	    static createFrom(source: any = {}) {
+	        return new fieldView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.column = source["column"];
+	        this.type = source["type"];
+	        this.value = source["value"];
+	        this.null = source["null"];
+	    }
+	}
+	
+	
+	export class tableView {
+	    name: string;
+	    definitionPage: number;
+	    rowCount: number;
+	    firstDataPage: number;
+	    columns: columnView[];
+	
+	    static createFrom(source: any = {}) {
+	        return new tableView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.definitionPage = source["definitionPage"];
+	        this.rowCount = source["rowCount"];
+	        this.firstDataPage = source["firstDataPage"];
+	        this.columns = this.convertValues(source["columns"], columnView);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class pageTypeCount {
+	    type: number;
+	    name: string;
+	    count: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new pageTypeCount(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.type = source["type"];
+	        this.name = source["name"];
+	        this.count = source["count"];
+	    }
+	}
+	export class inspectionView {
+	    file: fileInfoView;
+	    version: number;
+	    codePage: number;
+	    languageID: number;
+	    pageCount: number;
+	    pageTypeCounts: pageTypeCount[];
+	    tables: tableView[];
+	
+	    static createFrom(source: any = {}) {
+	        return new inspectionView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.file = this.convertValues(source["file"], fileInfoView);
+	        this.version = source["version"];
+	        this.codePage = source["codePage"];
+	        this.languageID = source["languageID"];
+	        this.pageCount = source["pageCount"];
+	        this.pageTypeCounts = this.convertValues(source["pageTypeCounts"], pageTypeCount);
+	        this.tables = this.convertValues(source["tables"], tableView);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
+	export class rowsView {
+	    table: string;
+	    offset: number;
+	    limit: number;
+	    declaredRows: number;
+	    rows: fieldView[][];
+	    diagnostics: msmoney.ExtractedDiagnostics;
+	
+	    static createFrom(source: any = {}) {
+	        return new rowsView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.table = source["table"];
+	        this.offset = source["offset"];
+	        this.limit = source["limit"];
+	        this.declaredRows = source["declaredRows"];
+	        this.rows = this.convertValues(source["rows"], fieldView);
+	        this.diagnostics = this.convertValues(source["diagnostics"], msmoney.ExtractedDiagnostics);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	
 
 }

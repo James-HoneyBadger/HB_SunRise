@@ -11,6 +11,7 @@ import {
 } from '../wailsjs/go/main/App'
 import type { ExtractionView, Progress } from './bindings'
 import { useVirtual } from './virtual'
+import RawInspector from './Raw'
 import { IncomeVersusExpense, CategoryBars, CumulativeLine, monthlySeries, spendingByCategory, cumulativeByAccount } from './charts'
 
 type Tab = 'overview' | 'accounts' | 'transactions' | 'reports' | 'validation' | 'raw'
@@ -429,47 +430,7 @@ export default function App() {
               </section>
             )}
 
-            {tab === 'raw' && (
-              <section className="grid">
-                <div className="card wide">
-                  <h2>Decoding diagnostics</h2>
-                  {diagnosticsEmpty && <p className="muted">Everything found decoded cleanly.</p>}
-                  {!diagnosticsEmpty && (
-                    <dl>
-                      <dt>Rows undecodable</dt>
-                      <dd>{view.diagnostics.CorruptRows}</dd>
-                      <dt>Rows unresolved</dt>
-                      <dd>{view.diagnostics.UnresolvedRows}</dd>
-                      <dt>Definitions undecodable</dt>
-                      <dd>{view.diagnostics.CorruptDefinitions}</dd>
-                      <dt>Catalog entries unreadable</dt>
-                      <dd>{view.diagnostics.UnknownCatalogEntries}</dd>
-                    </dl>
-                  )}
-                  {view.diagnostics.Samples.length > 0 && (
-                    <ul className="samples">
-                      {view.diagnostics.Samples.map((sample, index) => (
-                        <li key={index} className="mono">
-                          {sample}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-                <div className="card">
-                  <h2>Source</h2>
-                  <dl>
-                    <dt>File</dt>
-                    <dd>{view.file.name}</dd>
-                    <dt>Extracted in</dt>
-                    <dd>{view.elapsed}</dd>
-                  </dl>
-                  <p className="muted small">
-                    The original file is only ever read; exports are written where you choose and never overwrite an existing file.
-                  </p>
-                </div>
-              </section>
-            )}
+            {tab === 'raw' && <RawInspector file={view.file} />}
           </>
         )}
       </main>

@@ -24,6 +24,7 @@ import (
 
 	"github.com/James-HoneyBadger/hb-sunrise/pkg/converters/export"
 	"github.com/James-HoneyBadger/hb-sunrise/pkg/converters/msmoney"
+	"github.com/James-HoneyBadger/hb-sunrise/pkg/converters/msmoney/msisam"
 )
 
 const maxRecentFiles = 10
@@ -106,9 +107,10 @@ func (c appContext) GetClientLocale() string {
 
 // App is the bound backend of the window.
 type App struct {
-	ctx     context.Context
-	session *extractionView
-	cancel  context.CancelFunc
+	ctx        context.Context
+	session    *extractionView
+	cancel     context.CancelFunc
+	inspection *inspectionSession
 }
 
 // NewApp returns the application the window binds.
@@ -405,5 +407,362 @@ func describeExtractionError(err error) error {
 		return errors.New("the backup is too large to extract")
 	default:
 		return err
+	}
+}
+
+// Inspection
+
+type pageTypeCount struct {
+	Type  int    `json:"type"`
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
+type columnView struct {
+	Name   string `json:"name"`
+	Type   string `json:"type"`
+	Fixed  bool   `json:"fixed"`
+	Number int    `json:"number"`
+	Offset int    `json:"offset"`
+	Size   int    `json:"size"`
+}
+
+type tableView struct {
+	Name           string       `json:"name"`
+	DefinitionPage int          `json:"definitionPage"`
+	RowCount       int          `json:"rowCount"`
+	FirstDataPage  int          `json:"firstDataPage"`
+	Columns        []columnView `json:"columns"`
+}
+
+type inspectionView struct {
+	File           fileInfoView    `json:"file"`
+	Version        int             `json:"version"`
+	CodePage       int             `json:"codePage"`
+	LanguageID     int             `json:"languageID"`
+	PageCount      int             `json:"pageCount"`
+	PageTypeCounts []pageTypeCount `json:"pageTypeCounts"`
+	Tables         []tableView     `json:"tables"`
+}
+
+type fieldView struct {
+	Column string `json:"column"`
+	Type   string `json:"type"`
+	Value  string `json:"value"`
+	Null   bool   `json:"null"`
+}
+
+type rowsView struct {
+	Table        string                       `json:"table"`
+	Offset       int                          `json:"offset"`
+	Limit        int                          `json:"limit"`
+	DeclaredRows int                          `json:"declaredRows"`
+	Rows         [][]fieldView                `json:"rows"`
+	Diagnostics  msmoney.ExtractedDiagnostics `json:"diagnostics"`
+}
+
+// inspectionSession keeps the bytes and page view of the file being inspected.
+type inspectionSession struct {
+	data     []byte
+	database *msisam.Database
+}
+
+// Inspect opens the file at path for raw inspection: header, pages and table
+// schemas, without walking any rows. It replaces the inspection session.
+func (a *App) Inspect(path string) (*inspectionView, error) {
+	data, err := os.ReadFile(path)
+
+	if err != nil {
+		return nil, fmt.Errorf("cannot read the file: %w", err)
+	}
+
+	database, err := msisam.Open(data)
+
+	if err != nil {
+		kind := msmoney.ErrDataFileNotReadable
+
+		if errors.Is(err, msisam.ErrEncryptedDatabase) {
+			kind = msmoney.ErrDataFileEncrypted
+		} else if errors.Is(err, msisam.ErrUnsupportedVersion) {
+			kind = msmoney.ErrDataFileUnsupportedVersion
+		}
+
+		return nil, describeExtractionError(fmt.Errorf("%w: %v", kind, err))
+	}
+
+	a.inspection = &inspectionSession{data: data, database: database}
+
+	hash := sha256.Sum256(data)
+
+	view := &inspectionView{
+		File: fileInfoView{
+			Path:   path,
+			Name:   filepath.Base(path),
+			Size:   int64(len(data)),
+			Sha256: hex.EncodeToString(hash[:]),
+		},
+		Version:        int(database.Version()),
+		CodePage:       int(database.CodePage()),
+		LanguageID:     int(database.LanguageID()),
+		PageCount:      database.PageCount(),
+		PageTypeCounts: make([]pageTypeCount, 0, 6),
+		Tables:         make([]tableView, 0),
+	}
+
+	for name, count := range database.PageTypeCounts() {
+		view.PageTypeCounts = append(view.PageTypeCounts, pageTypeCount{Type: int(name), Name: pageTypeName(name), Count: count})
+	}
+
+	sort.Slice(view.PageTypeCounts, func(left, right int) bool {
+		return view.PageTypeCounts[left].Type < view.PageTypeCounts[right].Type
+	})
+
+	tables, err := database.Tables()
+
+	if err != nil {
+		return nil, fmt.Errorf("cannot read the table catalog: %w", err)
+	}
+
+	for _, table := range tables {
+		entry := tableView{
+			Name:           table.Name,
+			DefinitionPage: table.Definition.Page,
+			RowCount:       table.Definition.RowCount,
+			FirstDataPage:  table.Definition.FirstDataPage,
+			Columns:        make([]columnView, 0, len(table.Definition.Columns)),
+		}
+
+		for _, column := range table.Definition.Columns {
+			entry.Columns = append(entry.Columns, columnView{
+				Name:   column.Name,
+				Type:   column.Type.String(),
+				Fixed:  column.Fixed,
+				Number: column.Number,
+				Offset: column.Offset,
+				Size:   column.Size,
+			})
+		}
+
+		view.Tables = append(view.Tables, entry)
+	}
+
+	return view, nil
+}
+
+// InspectRows returns a page of raw records of the given table, decoded into
+// human-readable values. The record walk honours Cancel. Only the page is
+// collected, so a large table stays responsive.
+func (a *App) InspectRows(tableName string, offset int, limit int) (*rowsView, error) {
+	if a.inspection == nil {
+		return nil, errors.New("inspect a file first")
+	}
+
+	if offset < 0 {
+		offset = 0
+	}
+
+	if limit < 1 || limit > 500 {
+		limit = 100
+	}
+
+	database := a.inspection.database
+	table, err := database.Table(tableName)
+
+	if err != nil {
+		return nil, fmt.Errorf("no table named %q: %w", tableName, err)
+	}
+
+	diagnostics := &msisam.Diagnostics{}
+	database.SetDiagnostics(diagnostics)
+
+	cancellable, cancel := context.WithCancel(a.ctx)
+	a.cancel = cancel
+	defer cancel()
+
+	ctx := appContext{Context: cancellable}
+
+	result := &rowsView{
+		Table:        table.Name,
+		Offset:       offset,
+		Limit:        limit,
+		DeclaredRows: table.Definition.RowCount,
+		Rows:         make([][]fieldView, 0, limit),
+	}
+
+	skipped := 0
+	errRowsCollected := errors.New("page collected")
+
+	err = database.EachRow(ctx, table.Definition, func(fields []msisam.Field) error {
+		if skipped < offset {
+			skipped++
+
+			return nil
+		}
+
+		if len(result.Rows) >= limit {
+			return errRowsCollected
+		}
+
+		row := make([]fieldView, 0, len(fields))
+
+		for _, field := range fields {
+			row = append(row, fieldView{
+				Column: field.Column.Name,
+				Type:   field.Column.Type.String(),
+				Value:  renderFieldValue(database, field),
+				Null:   field.Null && field.Column.Type != msisam.ColumnTypeBool,
+			})
+		}
+
+		result.Rows = append(result.Rows, row)
+
+		return nil
+	})
+
+	if err != nil && !errors.Is(err, errRowsCollected) {
+		if ctx.Err() != nil {
+			return nil, errors.New("inspection cancelled")
+		}
+
+		return nil, fmt.Errorf("cannot read rows: %w", err)
+	}
+
+	result.Diagnostics = diagnosticsView(diagnostics)
+
+	return result, nil
+}
+
+// diagnosticsView converts the engine's decoding diagnostics into the public
+// report shape the window already knows.
+func diagnosticsView(diagnostics *msisam.Diagnostics) msmoney.ExtractedDiagnostics {
+	if diagnostics == nil || diagnostics.IsEmpty() {
+		return msmoney.ExtractedDiagnostics{}
+	}
+
+	result := msmoney.ExtractedDiagnostics{
+		CorruptRows:           diagnostics.CorruptRows,
+		UnresolvedRows:        diagnostics.UnresolvedRows,
+		CorruptDefinitions:    diagnostics.CorruptDefinitions,
+		UnknownCatalogEntries: diagnostics.UnknownCatalogEntries,
+		Samples:               make([]string, 0, len(diagnostics.RowSamples)+len(diagnostics.DefinitionSamples)),
+	}
+
+	for _, sample := range diagnostics.RowSamples {
+		result.Samples = append(result.Samples, fmt.Sprintf("row (definition page %d, page %d, slot %d): %s", sample.Definition, sample.Page, sample.Slot, sample.Err))
+	}
+
+	for _, sample := range diagnostics.DefinitionSamples {
+		result.Samples = append(result.Samples, fmt.Sprintf("definition (page %d): %s", sample.Page, sample.Err))
+	}
+
+	return result
+}
+
+// renderFieldValue renders one decoded field for the inspection workspace.
+// Money is shown as its stored integer and its decimal value, so the raw scale
+// is never hidden behind a floating point rendering.
+func renderFieldValue(database *msisam.Database, field msisam.Field) string {
+	if field.Column.Type == msisam.ColumnTypeBool {
+		if database.Bool(field) {
+			return "true"
+		}
+
+		return "false"
+	}
+
+	if field.Null {
+		return ""
+	}
+
+	switch field.Column.Type {
+	case msisam.ColumnTypeByte, msisam.ColumnTypeInt, msisam.ColumnTypeLongInt:
+		value, ok := database.Int(field)
+
+		if !ok {
+			return "(cannot decode)"
+		}
+
+		return fmt.Sprintf("%d", value)
+	case msisam.ColumnTypeMoney:
+		value, ok := database.Int(field)
+
+		if !ok {
+			return "(cannot decode)"
+		}
+
+		return fmt.Sprintf("%d (%.4f)", value, float64(value)/10000)
+	case msisam.ColumnTypeFloat, msisam.ColumnTypeDouble:
+		value, ok := database.Float(field)
+
+		if !ok {
+			return "(cannot decode)"
+		}
+
+		return fmt.Sprintf("%g", value)
+	case msisam.ColumnTypeNumeric:
+		value, ok := database.Numeric(field)
+
+		if !ok {
+			return "(cannot decode)"
+		}
+
+		return fmt.Sprintf("%g", value)
+	case msisam.ColumnTypeDateTime:
+		value, ok := database.Time(field)
+
+		if !ok {
+			return "(cannot decode)"
+		}
+
+		return value.Format("2006-01-02 15:04:05")
+	case msisam.ColumnTypeText, msisam.ColumnTypeMemo:
+		value, err := database.String(field)
+
+		if err != nil {
+			return "(cannot decode)"
+		}
+
+		return value
+	case msisam.ColumnTypeGUID:
+		value, ok := database.GUID(field)
+
+		if !ok {
+			return "(cannot decode)"
+		}
+
+		return value
+	case msisam.ColumnTypeBinary, msisam.ColumnTypeOLE:
+		value, err := database.Bytes(field)
+
+		if err != nil {
+			return "(cannot decode)"
+		}
+
+		if len(value) > 64 {
+			return fmt.Sprintf("%d bytes: %x…", len(value), value[:32])
+		}
+
+		return fmt.Sprintf("%x", value)
+	default:
+		return fmt.Sprintf("(type %s)", field.Column.Type)
+	}
+}
+
+func pageTypeName(pageType byte) string {
+	switch pageType {
+	case msisam.PageTypeHeader:
+		return "header"
+	case msisam.PageTypeData:
+		return "data"
+	case msisam.PageTypeDefinition:
+		return "definition"
+	case msisam.PageTypeIndex:
+		return "index"
+	case msisam.PageTypeLeaf:
+		return "leaf"
+	case msisam.PageTypeUsageMap:
+		return "usage map"
+	default:
+		return fmt.Sprintf("unknown(0x%02X)", pageType)
 	}
 }

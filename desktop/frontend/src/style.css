@@ -519,3 +519,97 @@ td.amount {
   cursor: pointer;
   user-select: none;
 }
+
+/* Raw inspection */
+.table-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.table-name {
+  background: none;
+  border: none;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+}
+
+.table-name.active {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.table-name.active .muted {
+  color: var(--accent-text);
+  opacity: 0.85;
+}
+
+.page-count {
+  display: contents;
+}
+
+.records-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.records-head h2 {
+  margin: 0;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.record {
+  display: flex;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.record-index {
+  color: var(--muted);
+  min-width: 44px;
+  padding-top: 2px;
+}
+
+.record-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+
+.field {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 120px;
+  max-width: 340px;
+}
+
+.field strong {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.field-value {
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.field-null {
+  font-size: 12px;
+}

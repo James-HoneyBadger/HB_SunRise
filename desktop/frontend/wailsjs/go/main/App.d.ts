@@ -8,6 +8,10 @@ export function ClearRecentFiles():Promise<void>;
 
 export function Export(arg1:string,arg2:string):Promise<void>;
 
+export function Inspect(arg1:string):Promise<main.inspectionView>;
+
+export function InspectRows(arg1:string,arg2:number,arg3:number):Promise<main.rowsView>;
+
 export function OpenFileDialog():Promise<string>;
 
 export function OpenPath(arg1:string):Promise<main.extractionView>;

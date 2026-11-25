@@ -94,13 +94,13 @@ func (r ValidationReport) withSeverity(severity Severity) []Finding {
 // distinguishable in a statement: the same account, day, amount, category and
 // memo appearing twice is a duplicate.
 type transactionKey struct {
-	account     string
-	date        string
-	amount      int64
-	category    string
-	subCategory string
-	memo        string
-	transferTo  string
+	account      string
+	date         string
+	amount       int64
+	category     string
+	subCategory  string
+	memo         string
+	transferTo   string
 }
 
 func keyOf(transaction ExtractedTransaction) transactionKey {
@@ -147,13 +147,13 @@ func ValidateTransactions(data *ExtractedData) ValidationReport {
 
 		if transaction.Type == ExtractedTypeTransfer && transaction.TransferAmount == 0 {
 			report.Findings = append(report.Findings, Finding{
-				Severity:        SeverityUncertain,
-				Kind:            FindingTransferAmountFallback,
-				Account:         transaction.Account,
+				Severity:       SeverityUncertain,
+				Kind:           FindingTransferAmountFallback,
+				Account:        transaction.Account,
 				TransferAccount: transaction.TransferAccount,
-				Time:            transaction.Time,
-				Amount:          transaction.Amount,
-				Message:         "the receiving side of the transfer could not be matched, so the source amount is used for both sides",
+				Time:           transaction.Time,
+				Amount:         transaction.Amount,
+				Message:        "the receiving side of the transfer could not be matched, so the source amount is used for both sides",
 			})
 		}
 	}
