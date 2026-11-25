@@ -165,7 +165,7 @@ export default function App() {
   const transactions = useMemo(() => {
     if (!view) return []
     const filtered = view.transactions.filter((t) => {
-      const hay = `${t.account} ${t.memo} ${t.category} ${t.subCategory} ${t.transferAccount} ${t.type}`.toLowerCase()
+      const hay = `${t.account} ${t.payee} ${t.currency} ${t.memo} ${t.category} ${t.subCategory} ${t.transferAccount} ${t.type}`.toLowerCase()
       return hay.includes(query.toLowerCase())
     })
     const dir = sort.dir
@@ -183,12 +183,17 @@ export default function App() {
 
   const virtual = useVirtual(transactions.length, 34)
 
-  const monthly = useMemo(() => (view ? monthlySeries(view.transactions) : []), [view])
-  const categories = useMemo(() => (view ? spendingByCategory(view.transactions, 10) : []), [view])
-  const payees = useMemo(() => (view ? spendingByPayee(view.transactions, 10) : []), [view])
+  const [reportCurrency, setReportCurrency] = useState('')
+  const currencies = useMemo(() => [...new Set((view?.transactions ?? []).map(t => t.currency))].sort(), [view])
+  const selectedCurrency = currencies.includes(reportCurrency) ? reportCurrency : (currencies[0] ?? '')
+  const mixedCurrencies = currencies.length > 1 || (view?.accounts.some(a => a.currency !== selectedCurrency) ?? false)
+  const scoped = useMemo(() => (view?.transactions ?? []).filter(t => t.currency === selectedCurrency && t.currency !== ''), [view, selectedCurrency])
+  const monthly = useMemo(() => monthlySeries(scoped), [scoped])
+  const categories = useMemo(() => spendingByCategory(scoped, 10), [scoped])
+  const payees = useMemo(() => spendingByPayee(scoped, 10), [scoped])
   const cumulative = useMemo(
-    () => (view ? cumulativeByAccount(view.transactions, reportAccount) : []),
-    [view, reportAccount],
+    () => (view && !mixedCurrencies && selectedCurrency ? cumulativeByAccount(view.transactions, reportAccount) : []),
+    [view, reportAccount, mixedCurrencies, selectedCurrency],
   )
 
   const diagnosticsEmpty =
@@ -390,7 +395,7 @@ export default function App() {
             {tab === 'transactions' && (
               <section className="table-wrap">
                 <div className="table-tools">
-                  <input placeholder="Search accounts, memos, categories…" value={query} onChange={(e) => setQuery(e.target.value)} />
+                  <input placeholder="Search accounts, payees, currencies, memos…" value={query} onChange={(e) => setQuery(e.target.value)} />
                   <span className="muted">
                     {transactions.length} of {view.transactions.length} transactions
                   </span>
@@ -444,7 +449,7 @@ export default function App() {
 
             {tab === 'categories' && (
               <section className="table-wrap">
-                <p className="muted">{view.categories.length} category paths with activity.</p>
+                <p className="muted">{view.categories.length} category paths with activity. {mixedCurrencies || !selectedCurrency ? 'Monetary totals hidden because currencies cannot safely be combined.' : selectedCurrency}</p>
                 <table>
                   <thead>
                     <tr>
@@ -459,8 +464,8 @@ export default function App() {
                       <tr key={category.path}>
                         <td>{category.path}</td>
                         <td className="mono amount">{category.count}</td>
-                        <td className="mono amount">{category.expense !== 0 ? amountOf(category.expense) : '—'}</td>
-                        <td className="mono amount">{category.income !== 0 ? amountOf(category.income) : '—'}</td>
+                        <td className="mono amount">{mixedCurrencies || !selectedCurrency ? '—' : category.expense !== 0 ? amountOf(category.expense) : '—'}</td>
+                        <td className="mono amount">{mixedCurrencies || !selectedCurrency ? '—' : category.income !== 0 ? amountOf(category.income) : '—'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -470,7 +475,7 @@ export default function App() {
 
             {tab === 'payees' && (
               <section className="table-wrap">
-                <p className="muted">{view.payees.length} payees named on transactions.</p>
+                <p className="muted">{view.payees.length} payees named on transactions. {mixedCurrencies || !selectedCurrency ? 'Monetary totals hidden because currencies cannot safely be combined.' : selectedCurrency}</p>
                 <table>
                   <thead>
                     <tr>
@@ -485,8 +490,8 @@ export default function App() {
                       <tr key={payee.name}>
                         <td>{payee.name}</td>
                         <td className="mono amount">{payee.count}</td>
-                        <td className="mono amount">{payee.expense !== 0 ? amountOf(payee.expense) : '—'}</td>
-                        <td className="mono amount">{payee.income !== 0 ? amountOf(payee.income) : '—'}</td>
+                        <td className="mono amount">{mixedCurrencies || !selectedCurrency ? '—' : payee.expense !== 0 ? amountOf(payee.expense) : '—'}</td>
+                        <td className="mono amount">{mixedCurrencies || !selectedCurrency ? '—' : payee.income !== 0 ? amountOf(payee.income) : '—'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -570,6 +575,10 @@ export default function App() {
               <section className="grid">
                 <div className="card wide">
                   <h2>Income versus expenses</h2>
+                  <label>Report currency <select value={selectedCurrency} onChange={e => setReportCurrency(e.target.value)}>
+                    {currencies.map(currency => <option key={currency} value={currency}>{currency || 'Unknown currency'}</option>)}
+                  </select></label>
+                  <p className="muted small">Reports use one source currency at a time; no exchange rates are inferred.</p>
                   {monthly.length > 0 ? <IncomeVersusExpense months={monthly} /> : <p className="muted">No income or expense transactions to chart.</p>}
                 </div>
                 <div className="card">
@@ -590,7 +599,7 @@ export default function App() {
                       </option>
                     ))}
                   </select>
-                  <CumulativeLine points={cumulative} />
+                  {mixedCurrencies || !selectedCurrency ? <p className="warn">Cumulative history is unavailable for mixed or unknown currencies until currency-aware transfer reconciliation is supported.</p> : <CumulativeLine points={cumulative} />}
                   <p className="muted small">
                     Calculated from the transactions this file holds; it is not a Money account balance, because opening balances are not decoded.
                   </p>
@@ -614,8 +623,8 @@ export default function App() {
                     <strong>{view.validationSummary.transferCount}</strong> transfers
                   </span>
                   <span className="mono">
-                    {view.validationSummary.incomeTotal !== 0 && `in ${amountOf(view.validationSummary.incomeTotal)}`}
-                    {view.validationSummary.expenseTotal !== 0 && ` · out ${amountOf(view.validationSummary.expenseTotal)}`}
+                    {!mixedCurrencies && selectedCurrency && view.validationSummary.incomeTotal !== 0 && `in ${amountOf(view.validationSummary.incomeTotal)}`}
+                    {!mixedCurrencies && selectedCurrency && view.validationSummary.expenseTotal !== 0 && ` · out ${amountOf(view.validationSummary.expenseTotal)}`}
                   </span>
                   {view.validationSummary.earliest && (
                     <span className="mono">
@@ -624,7 +633,7 @@ export default function App() {
                   )}
                 </div>
                 <p className="muted small">
-                  Counts and totals are calculated from the transactions this file holds; they are not Money account balances.
+                  {mixedCurrencies || !selectedCurrency ? 'Monetary totals hidden because currencies cannot safely be combined. ' : ''} Counts and totals are calculated from the transactions this file holds; they are not Money account balances.
                 </p>
                 {view.validation.length === 0 && <p className="muted">Validation found nothing to report.</p>}
                 {view.validation.map((finding, index) => (
