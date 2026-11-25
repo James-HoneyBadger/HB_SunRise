@@ -14,7 +14,7 @@ import { useVirtual } from './virtual'
 import RawInspector from './Raw'
 import { IncomeVersusExpense, CategoryBars, CumulativeLine, monthlySeries, spendingByCategory, cumulativeByAccount } from './charts'
 
-type Tab = 'overview' | 'accounts' | 'transactions' | 'categories' | 'transfers' | 'splits' | 'reports' | 'validation' | 'raw'
+type Tab = 'overview' | 'accounts' | 'transactions' | 'categories' | 'payees' | 'transfers' | 'splits' | 'reports' | 'validation' | 'raw'
 
 const FORMATS: { key: string; name: string }[] = [
   { key: 'csv', name: 'CSV' },
@@ -165,7 +165,7 @@ export default function App() {
         </div>
 
         <nav>
-          {(['overview', 'accounts', 'transactions', 'categories', 'transfers', 'splits', 'reports', 'validation', 'raw'] as Tab[]).map((key) => (
+          {(['overview', 'accounts', 'transactions', 'categories', 'payees', 'transfers', 'splits', 'reports', 'validation', 'raw'] as Tab[]).map((key) => (
             <button key={key} className={tab === key ? 'nav active' : 'nav'} disabled={!view && key !== 'overview'} onClick={() => setTab(key)}>
               {key[0].toUpperCase() + key.slice(1)}
               {key === 'validation' && !view && <span className="hint"> </span>}
@@ -316,6 +316,7 @@ export default function App() {
                     <tr>
                       <th>Account</th>
                       <th>Currency</th>
+                      <th>State</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -323,6 +324,11 @@ export default function App() {
                       <tr key={account.name}>
                         <td>{account.name}</td>
                         <td className="mono">{account.currency}</td>
+                        <td>
+                          {account.closed && <span className="chip muted-chip" title="Marked closed in the file">closed</span>}
+                          {account.hidden && <span className="chip muted-chip" title="Marked hidden in the file">hidden</span>}
+                          {!account.closed && !account.hidden && <span className="muted">—</span>}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -349,6 +355,7 @@ export default function App() {
                   </span>
                   <span>Transfer</span>
                   <span>Category</span>
+                  <span>Payee</span>
                   <span>Memo</span>
                 </div>
                 <div className="virt" ref={virtual.containerRef} onScroll={virtual.onScroll}>
@@ -375,6 +382,7 @@ export default function App() {
                           {t.category && t.subCategory && <span className="muted"> / {t.subCategory}</span>}
                           {!t.category && t.subCategory && <span>{t.subCategory}</span>}
                         </span>
+                        <span>{t.payee}</span>
                         <span className="muted">{t.memo}</span>
                       </div>
                     ))}
@@ -402,6 +410,32 @@ export default function App() {
                         <td className="mono amount">{category.count}</td>
                         <td className="mono amount">{category.expense !== 0 ? amountOf(category.expense) : '—'}</td>
                         <td className="mono amount">{category.income !== 0 ? amountOf(category.income) : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+            )}
+
+            {tab === 'payees' && (
+              <section className="table-wrap">
+                <p className="muted">{view.payees.length} payees named on transactions.</p>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Payee</th>
+                      <th className="amount">Count</th>
+                      <th className="amount">Expense</th>
+                      <th className="amount">Income</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {view.payees.map((payee) => (
+                      <tr key={payee.name}>
+                        <td>{payee.name}</td>
+                        <td className="mono amount">{payee.count}</td>
+                        <td className="mono amount">{payee.expense !== 0 ? amountOf(payee.expense) : '—'}</td>
+                        <td className="mono amount">{payee.income !== 0 ? amountOf(payee.income) : '—'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -511,6 +545,32 @@ export default function App() {
 
             {tab === 'validation' && (
               <section className="table-wrap">
+                <div className="summary-strip">
+                  <span>
+                    <strong>{view.validationSummary.transactionCount}</strong> transactions
+                  </span>
+                  <span>
+                    <strong>{view.validationSummary.incomeCount}</strong> income
+                  </span>
+                  <span>
+                    <strong>{view.validationSummary.expenseCount}</strong> expenses
+                  </span>
+                  <span>
+                    <strong>{view.validationSummary.transferCount}</strong> transfers
+                  </span>
+                  <span className="mono">
+                    {view.validationSummary.incomeTotal !== 0 && `in ${amountOf(view.validationSummary.incomeTotal)}`}
+                    {view.validationSummary.expenseTotal !== 0 && ` · out ${amountOf(view.validationSummary.expenseTotal)}`}
+                  </span>
+                  {view.validationSummary.earliest && (
+                    <span className="mono">
+                      {view.validationSummary.earliest} → {view.validationSummary.latest}
+                    </span>
+                  )}
+                </div>
+                <p className="muted small">
+                  Counts and totals are calculated from the transactions this file holds; they are not Money account balances.
+                </p>
                 {view.validation.length === 0 && <p className="muted">Validation found nothing to report.</p>}
                 {view.validation.map((finding, index) => (
                   <div className="finding" key={index}>

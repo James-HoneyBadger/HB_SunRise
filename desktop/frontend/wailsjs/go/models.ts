@@ -3,6 +3,8 @@ export namespace main {
 	export class accountView {
 	    name: string;
 	    currency: string;
+	    closed: boolean;
+	    hidden: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new accountView(source);
@@ -12,6 +14,8 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
 	        this.currency = source["currency"];
+	        this.closed = source["closed"];
+	        this.hidden = source["hidden"];
 	    }
 	}
 	export class categorySummaryView {
@@ -52,6 +56,32 @@ export namespace main {
 	        this.number = source["number"];
 	        this.offset = source["offset"];
 	        this.size = source["size"];
+	    }
+	}
+	export class validationSummaryView {
+	    transactionCount: number;
+	    incomeCount: number;
+	    expenseCount: number;
+	    transferCount: number;
+	    incomeTotal: number;
+	    expenseTotal: number;
+	    earliest: string;
+	    latest: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new validationSummaryView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.transactionCount = source["transactionCount"];
+	        this.incomeCount = source["incomeCount"];
+	        this.expenseCount = source["expenseCount"];
+	        this.transferCount = source["transferCount"];
+	        this.incomeTotal = source["incomeTotal"];
+	        this.expenseTotal = source["expenseTotal"];
+	        this.earliest = source["earliest"];
+	        this.latest = source["latest"];
 	    }
 	}
 	export class findingView {
@@ -124,6 +154,24 @@ export namespace main {
 	        this.memo = source["memo"];
 	    }
 	}
+	export class payeeSummaryView {
+	    name: string;
+	    count: number;
+	    expense: number;
+	    income: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new payeeSummaryView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.count = source["count"];
+	        this.expense = source["expense"];
+	        this.income = source["income"];
+	    }
+	}
 	export class transactionView {
 	    time: string;
 	    type: string;
@@ -135,6 +183,7 @@ export namespace main {
 	    category: string;
 	    subCategory: string;
 	    memo: string;
+	    payee: string;
 	    split: boolean;
 	
 	    static createFrom(source: any = {}) {
@@ -153,6 +202,7 @@ export namespace main {
 	        this.category = source["category"];
 	        this.subCategory = source["subCategory"];
 	        this.memo = source["memo"];
+	        this.payee = source["payee"];
 	        this.split = source["split"];
 	    }
 	}
@@ -179,11 +229,13 @@ export namespace main {
 	    accounts: accountView[];
 	    transactions: transactionView[];
 	    categories: categorySummaryView[];
+	    payees: payeeSummaryView[];
 	    transfers: transferView[];
 	    splits: splitView[];
 	    skipped: number;
 	    diagnostics: msmoney.ExtractedDiagnostics;
 	    validation: findingView[];
+	    validationSummary: validationSummaryView;
 	    elapsed: string;
 	
 	    static createFrom(source: any = {}) {
@@ -196,11 +248,13 @@ export namespace main {
 	        this.accounts = this.convertValues(source["accounts"], accountView);
 	        this.transactions = this.convertValues(source["transactions"], transactionView);
 	        this.categories = this.convertValues(source["categories"], categorySummaryView);
+	        this.payees = this.convertValues(source["payees"], payeeSummaryView);
 	        this.transfers = this.convertValues(source["transfers"], transferView);
 	        this.splits = this.convertValues(source["splits"], splitView);
 	        this.skipped = source["skipped"];
 	        this.diagnostics = this.convertValues(source["diagnostics"], msmoney.ExtractedDiagnostics);
 	        this.validation = this.convertValues(source["validation"], findingView);
+	        this.validationSummary = this.convertValues(source["validationSummary"], validationSummaryView);
 	        this.elapsed = source["elapsed"];
 	    }
 	
@@ -339,6 +393,7 @@ export namespace main {
 		}
 	}
 	
+	
 	export class rowsView {
 	    table: string;
 	    offset: number;
@@ -379,6 +434,7 @@ export namespace main {
 		    return a;
 		}
 	}
+	
 	
 	
 	

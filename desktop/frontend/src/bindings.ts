@@ -17,6 +17,8 @@ export interface FileInfo {
 export interface AccountView {
   name: string
   currency: string
+  closed: boolean
+  hidden: boolean
 }
 
 export interface TransactionView {
@@ -30,6 +32,7 @@ export interface TransactionView {
   category: string
   subCategory: string
   memo: string
+  payee: string
   split: boolean
 }
 
@@ -82,10 +85,30 @@ export interface ExtractionView {
   accounts: AccountView[]
   transactions: TransactionView[]
   categories: CategorySummaryView[]
+  payees: PayeeSummaryView[]
   transfers: TransferView[]
   splits: SplitView[]
   skipped: number
   diagnostics: DiagnosticsView
   validation: FindingView[]
+  validationSummary: ValidationSummaryView
   elapsed: string
+}
+
+export interface PayeeSummaryView {
+  name: string
+  count: number
+  expense: number
+  income: number
+}
+
+export interface ValidationSummaryView {
+  transactionCount: number
+  incomeCount: number
+  expenseCount: number
+  transferCount: number
+  incomeTotal: number
+  expenseTotal: number
+  earliest: string
+  latest: string
 }

@@ -33,6 +33,8 @@ const maxRecentFiles = 10
 type accountView struct {
 	Name     string `json:"name"`
 	Currency string `json:"currency"`
+	Closed   bool   `json:"closed"`
+	Hidden   bool   `json:"hidden"`
 }
 
 // transactionView is one transaction as the window shows it. The amount is in
@@ -48,6 +50,7 @@ type transactionView struct {
 	Category        string `json:"category"`
 	SubCategory     string `json:"subCategory"`
 	Memo            string `json:"memo"`
+	Payee           string `json:"payee"`
 	Split           bool   `json:"split"`
 }
 
@@ -72,16 +75,18 @@ type fileInfoView struct {
 
 // extractionView is everything the window shows for one opened file.
 type extractionView struct {
-	File         fileInfoView                 `json:"file"`
-	Accounts     []accountView                `json:"accounts"`
-	Transactions []transactionView            `json:"transactions"`
-	Categories   []categorySummaryView        `json:"categories"`
-	Transfers    []transferView               `json:"transfers"`
-	Splits       []splitView                  `json:"splits"`
-	Skipped      int                          `json:"skipped"`
-	Diagnostics  msmoney.ExtractedDiagnostics `json:"diagnostics"`
-	Validation   []findingView                `json:"validation"`
-	Elapsed      string                       `json:"elapsed"`
+	File              fileInfoView                 `json:"file"`
+	Accounts          []accountView                `json:"accounts"`
+	Transactions      []transactionView            `json:"transactions"`
+	Categories        []categorySummaryView        `json:"categories"`
+	Payees            []payeeSummaryView           `json:"payees"`
+	Transfers         []transferView               `json:"transfers"`
+	Splits            []splitView                  `json:"splits"`
+	Skipped           int                          `json:"skipped"`
+	Diagnostics       msmoney.ExtractedDiagnostics `json:"diagnostics"`
+	Validation        []findingView                `json:"validation"`
+	ValidationSummary validationSummaryView        `json:"validationSummary"`
+	Elapsed           string                       `json:"elapsed"`
 }
 
 // categorySummaryView aggregates the transactions of one category path.
@@ -90,6 +95,27 @@ type categorySummaryView struct {
 	Count   int    `json:"count"`
 	Expense int64  `json:"expense"`
 	Income  int64  `json:"income"`
+}
+
+// payeeSummaryView aggregates the transactions of one payee.
+type payeeSummaryView struct {
+	Name    string `json:"name"`
+	Count   int    `json:"count"`
+	Expense int64  `json:"expense"`
+	Income  int64  `json:"income"`
+}
+
+// validationSummaryView carries the report's calculated counts and totals for
+// the validation workspace.
+type validationSummaryView struct {
+	TransactionCount int    `json:"transactionCount"`
+	IncomeCount      int    `json:"incomeCount"`
+	ExpenseCount     int    `json:"expenseCount"`
+	TransferCount    int    `json:"transferCount"`
+	IncomeTotal      int64  `json:"incomeTotal"`
+	ExpenseTotal     int64  `json:"expenseTotal"`
+	Earliest         string `json:"earliest"`
+	Latest           string `json:"latest"`
 }
 
 // transferView is one transfer as the window shows it, with both sides.
@@ -239,7 +265,12 @@ func buildExtractionView(path string, data []byte, extracted *msmoney.ExtractedD
 	}
 
 	for _, account := range extracted.Accounts {
-		view.Accounts = append(view.Accounts, accountView{Name: account.Name, Currency: account.Currency})
+		view.Accounts = append(view.Accounts, accountView{
+			Name:     account.Name,
+			Currency: account.Currency,
+			Closed:   account.Closed,
+			Hidden:   account.Hidden,
+		})
 	}
 
 	for _, transaction := range extracted.Transactions {
@@ -254,6 +285,7 @@ func buildExtractionView(path string, data []byte, extracted *msmoney.ExtractedD
 			Category:        transaction.Category,
 			SubCategory:     transaction.SubCategory,
 			Memo:            transaction.Memo,
+			Payee:           transaction.Payee,
 			Split:           transaction.Split,
 		})
 	}
@@ -310,6 +342,46 @@ func buildExtractionView(path string, data []byte, extracted *msmoney.ExtractedD
 	}
 
 	sort.Slice(view.Categories, func(left, right int) bool { return view.Categories[left].Path < view.Categories[right].Path })
+
+	payeeIndex := make(map[string]int, 16)
+
+	for _, transaction := range extracted.Transactions {
+		if transaction.Payee == "" {
+			continue
+		}
+
+		index, exists := payeeIndex[transaction.Payee]
+
+		if !exists {
+			view.Payees = append(view.Payees, payeeSummaryView{Name: transaction.Payee})
+			index = len(view.Payees) - 1
+			payeeIndex[transaction.Payee] = index
+		}
+
+		view.Payees[index].Count++
+
+		if transaction.Type == msmoney.ExtractedTypeExpense {
+			view.Payees[index].Expense += transaction.Amount
+		} else if transaction.Type == msmoney.ExtractedTypeIncome {
+			view.Payees[index].Income += transaction.Amount
+		}
+	}
+
+	sort.Slice(view.Payees, func(left, right int) bool { return view.Payees[left].Name < view.Payees[right].Name })
+
+	view.ValidationSummary = validationSummaryView{
+		TransactionCount: report.Summary.TransactionCount,
+		IncomeCount:      report.Summary.IncomeCount,
+		ExpenseCount:     report.Summary.ExpenseCount,
+		TransferCount:    report.Summary.TransferCount,
+		IncomeTotal:      report.Summary.IncomeTotal,
+		ExpenseTotal:     report.Summary.ExpenseTotal,
+	}
+
+	if !report.Summary.Earliest.IsZero() {
+		view.ValidationSummary.Earliest = report.Summary.Earliest.Format("2006-01-02")
+		view.ValidationSummary.Latest = report.Summary.Latest.Format("2006-01-02")
+	}
 
 	for _, finding := range report.Findings {
 		view.Validation = append(view.Validation, findingView{

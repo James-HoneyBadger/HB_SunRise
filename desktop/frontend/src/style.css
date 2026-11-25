@@ -440,6 +440,20 @@ td.amount {
   background: var(--chip-income);
 }
 
+.chip.muted-chip {
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+
+.summary-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  align-items: baseline;
+}
+
 .finding {
   display: flex;
   gap: 12px;

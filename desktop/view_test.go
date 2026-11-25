@@ -103,3 +103,67 @@ func TestBuildExtractionViewSplits(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildExtractionViewPayees(t *testing.T) {
+	view := buildTestView(t)
+
+	byName := make(map[string]payeeSummaryView, len(view.Payees))
+
+	for _, payee := range view.Payees {
+		byName[payee.Name] = payee
+	}
+
+	groceria, ok := byName["Groceria Market"]
+
+	if !ok {
+		t.Fatalf("payees = %+v, want Groceria Market", view.Payees)
+	}
+
+	if groceria.Count != 1 || groceria.Expense != 3000 {
+		t.Errorf("Groceria Market = %+v, want 1 transaction of 30.00", groceria)
+	}
+
+	landlord, ok := byName["Landlord"]
+
+	if !ok {
+		t.Fatalf("payees = %+v, want Landlord", view.Payees)
+	}
+
+	if landlord.Count != 1 || landlord.Expense != 2000 {
+		t.Errorf("Landlord = %+v, want 1 transaction of 20.00", landlord)
+	}
+}
+
+func TestBuildExtractionViewAccountFlagsAndSummary(t *testing.T) {
+	view := buildTestView(t)
+
+	byName := make(map[string]accountView, len(view.Accounts))
+
+	for _, account := range view.Accounts {
+		byName[account.Name] = account
+	}
+
+	oldJoint, ok := byName["Old Joint"]
+
+	if !ok {
+		t.Fatalf("accounts = %+v, want Old Joint", view.Accounts)
+	}
+
+	if !oldJoint.Closed {
+		t.Errorf("Old Joint should carry its closed flag: %+v", oldJoint)
+	}
+
+	if byName["Checking"].Closed || byName["Savings"].Closed {
+		t.Errorf("active accounts should not be closed: %+v", view.Accounts)
+	}
+
+	summary := view.ValidationSummary
+
+	if summary.TransactionCount != 3 || summary.ExpenseCount != 2 || summary.TransferCount != 1 {
+		t.Errorf("summary = %+v, want 3 transactions: 2 expenses and 1 transfer", summary)
+	}
+
+	if summary.ExpenseTotal != 5000 {
+		t.Errorf("expense total = %d, want 5000", summary.ExpenseTotal)
+	}
+}
