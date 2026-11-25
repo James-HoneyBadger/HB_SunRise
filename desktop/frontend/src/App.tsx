@@ -122,6 +122,44 @@ export default function App() {
     refreshRecent()
   }, [refreshRecent])
 
+  const workspaceOrder: Tab[] = ['overview', 'accounts', 'transactions', 'categories', 'payees', 'transfers', 'splits', 'reports', 'validation', 'raw']
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const mod = event.ctrlKey || event.metaKey
+
+      if (event.key === 'Escape' && busy) {
+        Cancel()
+        return
+      }
+
+      if (!mod || event.altKey) return
+
+      const key = event.key.toLowerCase()
+
+      if (key === 'o') {
+        event.preventDefault()
+        void openDialog()
+      } else if (key === 'e') {
+        event.preventDefault()
+        void exportTo()
+      } else if (key === 't') {
+        event.preventDefault()
+        setTheme((current) => (current === 'light' ? 'dark' : 'light'))
+      } else if (key >= '1' && key <= '9') {
+        event.preventDefault()
+        setTab(workspaceOrder[Number(key) - 1])
+      } else if (key === '0') {
+        event.preventDefault()
+        setTab('raw')
+      }
+    }
+
+    window.addEventListener('keydown', onKey)
+
+    return () => window.removeEventListener('keydown', onKey)
+  }, [busy, openDialog, exportTo])
+
   const transactions = useMemo(() => {
     if (!view) return []
     const filtered = view.transactions.filter((t) => {
@@ -166,8 +204,13 @@ export default function App() {
         </div>
 
         <nav>
-          {(['overview', 'accounts', 'transactions', 'categories', 'payees', 'transfers', 'splits', 'reports', 'validation', 'raw'] as Tab[]).map((key) => (
-            <button key={key} className={tab === key ? 'nav active' : 'nav'} disabled={!view && key !== 'overview'} onClick={() => setTab(key)}>
+          {workspaceOrder.map((key, index) => (
+            <button
+              key={key}
+              className={tab === key ? 'nav active' : 'nav'}
+              disabled={!view && key !== 'overview'}
+              title={key === 'overview' ? 'Ctrl+1' : key === 'raw' ? 'Ctrl+0' : `Ctrl+${index + 1}`}
+              onClick={() => setTab(key)}>
               {key[0].toUpperCase() + key.slice(1)}
               {key === 'validation' && !view && <span className="hint"> </span>}
             </button>
@@ -192,9 +235,14 @@ export default function App() {
         </section>
 
         <div className="sidebar-foot">
-          <button className="link" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
+          <button className="link" title="Ctrl+T" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
             {theme === 'light' ? 'Dark theme' : 'Light theme'}
           </button>
+          <p className="muted small">
+            Ctrl+O open · Ctrl+E export · Ctrl+T theme
+            <br />
+            Ctrl+1…9,0 workspaces · Esc cancel
+          </p>
         </div>
       </aside>
 
