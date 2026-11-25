@@ -32,3 +32,39 @@ jobs:
 
       - name: Test with race detector
         run: go test -race ./...
+
+  desktop:
+    name: Desktop application build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: desktop/frontend/package-lock.json
+
+      - name: Install webview build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.17.1
+
+      - name: Build the desktop application
+        working-directory: desktop
+        run: |
+          export PATH="$PATH:$(go env GOPATH)/bin"
+          wails generate module
+          wails build -tags webkit2_41 -skipbindings
+          go vet ./...

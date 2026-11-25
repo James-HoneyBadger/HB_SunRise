@@ -147,6 +147,23 @@ the extractor.
   well-chosen sample covering every column type, every transaction type,
   transfers, splits, and empty tables.
 
+## Desktop application
+
+The graphical application lives in [`desktop/`](../desktop): a Wails v2 +
+React + TypeScript app binding the same engine the CLI uses.
+
+```sh
+go install github.com/wailsapp/wails/v2/cmd/wails@v2.17.1
+cd desktop
+wails generate module     # refresh frontend/wailsjs bindings after changing app.go
+wails build -tags webkit2_41   # Linux, webkit2gtk-4.1; binary in build/bin/
+wails dev                 # hot-reload development with the vite server
+```
+
+Requirements: Go, Node.js, and on Linux `libgtk-3-dev libwebkit2gtk-4.1-dev`.
+The build produces a single self-contained binary; end users need nothing
+installed. CI builds the desktop application on every push.
+
 ## Conventions
 
 - Module: `github.com/James-HoneyBadger/hb-sunrise`. License: GPL-3.0-or-later.

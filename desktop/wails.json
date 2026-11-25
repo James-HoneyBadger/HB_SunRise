@@ -1,0 +1,13 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "HB SunRise",
+  "outputfilename": "hb-sunrise",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "Honey Badger Universe",
+    "email": "James-HoneyBadger@users.noreply.github.com"
+  }
+}

@@ -19,6 +19,16 @@ The Jet 4 / MSISAM file format the reader decodes is documented in
 [docs/MONEY_FILE_FORMAT.md](docs/MONEY_FILE_FORMAT.md), so the format itself
 needs no copy of Money to understand.
 
+## The desktop application
+
+A graphical workstation is under construction in [`desktop/`](desktop): open
+files with the native dialog or drag-and-drop, follow extraction progress,
+browse accounts and transactions, read the validation report and decoding
+diagnostics, and export — without a terminal. Build it with
+`wails build -tags webkit2_41` inside `desktop/` (see
+[docs/BUILDING_HB_SUNRISE.md](docs/BUILDING_HB_SUNRISE.md)). The CLI below
+remains fully supported.
+
 ## Using it
 
 Double-click the program and answer the questions in the window:

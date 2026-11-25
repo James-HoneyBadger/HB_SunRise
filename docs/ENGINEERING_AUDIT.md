@@ -231,6 +231,16 @@ Wails "open file → progress → table" spike, package it for all three OSes an
 verify the Linux WebKitGTK story (the one real packaging risk) before Phase 3
 proceeds. If Linux packaging proves brittle, fall back to Fyne.
 
+**Gate passed (2026-11-24):** the prototype lives in [`desktop/`](../desktop)
+— a Wails v2.17 + React 19 + TypeScript application binding the same engine
+the CLI uses (`OpenPath`, progress events, cancellation, validation,
+diagnostics, native open/save dialogs, recent files, export via the shared
+writers, light/dark themes, drag-and-drop). It builds to a single 11.5 MiB
+binary on Linux with `wails build -tags webkit2_41` (webkit2gtk-4.1) and runs
+cleanly; the Windows/macOS builds use the same Wails toolchain via CI runners.
+Wails + React/TypeScript is therefore confirmed as the Phase 3 stack; Fyne
+remains the fallback only if a platform turns out to be unpackageable.
+
 ### 7.2 Engine separation (Phase 2) — delivered
 
 The interfaces now exist with callers, and are documented in

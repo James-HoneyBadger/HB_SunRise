@@ -1,2 +1,10 @@
 # Build output of scripts/build-hb-sunrise.sh
 dist/
+
+# Wails desktop app artifacts
+desktop/build/
+desktop/frontend/node_modules/
+desktop/frontend/dist/
+
+# Wails build cache
+desktop/frontend/package.json.md5
