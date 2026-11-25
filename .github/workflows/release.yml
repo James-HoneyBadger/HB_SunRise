@@ -107,8 +107,8 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           mkdir -p dist
-          cp desktop/build/bin/hb-sunrise dist/hb-sunrise-desktop-linux-amd64
-          chmod +x dist/hb-sunrise-desktop-linux-amd64
+          cp desktop/build/bin/hb-sunrise "dist/hb-sunrise-desktop-${{ matrix.name }}"
+          chmod +x "dist/hb-sunrise-desktop-${{ matrix.name }}"
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
