@@ -48,6 +48,7 @@ type transactionView struct {
 	Category        string `json:"category"`
 	SubCategory     string `json:"subCategory"`
 	Memo            string `json:"memo"`
+	Split           bool   `json:"split"`
 }
 
 // findingView is one validation finding as the window shows it.
@@ -74,10 +75,44 @@ type extractionView struct {
 	File         fileInfoView                 `json:"file"`
 	Accounts     []accountView                `json:"accounts"`
 	Transactions []transactionView            `json:"transactions"`
+	Categories   []categorySummaryView        `json:"categories"`
+	Transfers    []transferView               `json:"transfers"`
+	Splits       []splitView                  `json:"splits"`
 	Skipped      int                          `json:"skipped"`
 	Diagnostics  msmoney.ExtractedDiagnostics `json:"diagnostics"`
 	Validation   []findingView                `json:"validation"`
 	Elapsed      string                       `json:"elapsed"`
+}
+
+// categorySummaryView aggregates the transactions of one category path.
+type categorySummaryView struct {
+	Path    string `json:"path"`
+	Count   int    `json:"count"`
+	Expense int64  `json:"expense"`
+	Income  int64  `json:"income"`
+}
+
+// transferView is one transfer as the window shows it, with both sides.
+type transferView struct {
+	Date            string `json:"date"`
+	Account         string `json:"account"`
+	TransferAccount string `json:"transferAccount"`
+	Amount          int64  `json:"amount"`
+	TransferAmount  int64  `json:"transferAmount"`
+	// Matched reports whether the receiving side's amount was matched from
+	// its own row; when false, the source amount was used for both sides.
+	Matched bool   `json:"matched"`
+	Memo    string `json:"memo"`
+}
+
+// splitView is one split fragment as the window shows it.
+type splitView struct {
+	Date        string `json:"date"`
+	Account     string `json:"account"`
+	Category    string `json:"category"`
+	SubCategory string `json:"subCategory"`
+	Amount      int64  `json:"amount"`
+	Memo        string `json:"memo"`
 }
 
 // recentStore is the location of the recent files list.
@@ -150,8 +185,6 @@ func (a *App) OpenPath(path string) (*extractionView, error) {
 		return nil, fmt.Errorf("cannot read the file: %w", err)
 	}
 
-	hash := sha256.Sum256(data)
-
 	cancellable, cancel := context.WithCancel(a.ctx)
 	a.cancel = cancel
 	defer cancel()
@@ -173,6 +206,19 @@ func (a *App) OpenPath(path string) (*extractionView, error) {
 	}
 
 	report := msmoney.ValidateTransactions(extracted)
+	view := buildExtractionView(path, data, extracted, report, start)
+
+	a.session = view
+	a.addRecent(path)
+
+	return view, nil
+}
+
+// buildExtractionView turns an extracted Money database into everything the
+// window shows: file provenance, accounts, transactions, and the derived
+// categories, transfers, and splits workspaces.
+func buildExtractionView(path string, data []byte, extracted *msmoney.ExtractedData, report msmoney.ValidationReport, start time.Time) *extractionView {
+	hash := sha256.Sum256(data)
 
 	view := &extractionView{
 		File: fileInfoView{
@@ -183,6 +229,9 @@ func (a *App) OpenPath(path string) (*extractionView, error) {
 		},
 		Accounts:     make([]accountView, 0, len(extracted.Accounts)),
 		Transactions: make([]transactionView, 0, len(extracted.Transactions)),
+		Categories:   make([]categorySummaryView, 0),
+		Transfers:    make([]transferView, 0),
+		Splits:       make([]splitView, 0),
 		Skipped:      extracted.Skipped,
 		Diagnostics:  extracted.Diagnostics,
 		Validation:   make([]findingView, 0, len(report.Findings)),
@@ -205,8 +254,62 @@ func (a *App) OpenPath(path string) (*extractionView, error) {
 			Category:        transaction.Category,
 			SubCategory:     transaction.SubCategory,
 			Memo:            transaction.Memo,
+			Split:           transaction.Split,
 		})
 	}
+
+	categoryIndex := make(map[string]int, 16)
+
+	for _, transaction := range extracted.Transactions {
+		path := categoryPathOf(transaction)
+
+		if path == "" {
+			continue
+		}
+
+		index, exists := categoryIndex[path]
+
+		if !exists {
+			view.Categories = append(view.Categories, categorySummaryView{Path: path})
+			index = len(view.Categories) - 1
+			categoryIndex[path] = index
+		}
+
+		view.Categories[index].Count++
+
+		if transaction.Type == msmoney.ExtractedTypeExpense {
+			view.Categories[index].Expense += transaction.Amount
+		} else if transaction.Type == msmoney.ExtractedTypeIncome {
+			view.Categories[index].Income += transaction.Amount
+		}
+	}
+
+	for _, transaction := range extracted.Transactions {
+		if transaction.Type == msmoney.ExtractedTypeTransfer {
+			view.Transfers = append(view.Transfers, transferView{
+				Date:            transaction.Time.Format("2006-01-02"),
+				Account:         transaction.Account,
+				TransferAccount: transaction.TransferAccount,
+				Amount:          transaction.Amount,
+				TransferAmount:  transaction.TransferAmount,
+				Matched:         transaction.TransferAmount != 0,
+				Memo:            transaction.Memo,
+			})
+		}
+
+		if transaction.Split {
+			view.Splits = append(view.Splits, splitView{
+				Date:        transaction.Time.Format("2006-01-02"),
+				Account:     transaction.Account,
+				Category:    transaction.Category,
+				SubCategory: transaction.SubCategory,
+				Amount:      transaction.Amount,
+				Memo:        transaction.Memo,
+			})
+		}
+	}
+
+	sort.Slice(view.Categories, func(left, right int) bool { return view.Categories[left].Path < view.Categories[right].Path })
 
 	for _, finding := range report.Findings {
 		view.Validation = append(view.Validation, findingView{
@@ -220,10 +323,7 @@ func (a *App) OpenPath(path string) (*extractionView, error) {
 		})
 	}
 
-	a.session = view
-	a.addRecent(path)
-
-	return view, nil
+	return view
 }
 
 // Cancel stops the extraction that is in progress, when one is.
@@ -311,6 +411,20 @@ func (a *App) sessionData() *msmoney.ExtractedData {
 	}
 
 	return data
+}
+
+// categoryPathOf joins a transaction's category and subcategory the way the
+// report shows them.
+func categoryPathOf(transaction msmoney.ExtractedTransaction) string {
+	if transaction.Category != "" && transaction.SubCategory != "" {
+		return transaction.Category + " / " + transaction.SubCategory
+	}
+
+	if transaction.SubCategory != "" {
+		return transaction.SubCategory
+	}
+
+	return transaction.Category
 }
 
 func currencyOf(accounts []msmoney.ExtractedAccount, name string) string {

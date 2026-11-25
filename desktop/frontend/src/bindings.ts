@@ -30,6 +30,33 @@ export interface TransactionView {
   category: string
   subCategory: string
   memo: string
+  split: boolean
+}
+
+export interface CategorySummaryView {
+  path: string
+  count: number
+  expense: number
+  income: number
+}
+
+export interface TransferView {
+  date: string
+  account: string
+  transferAccount: string
+  amount: number
+  transferAmount: number
+  matched: boolean
+  memo: string
+}
+
+export interface SplitView {
+  date: string
+  account: string
+  category: string
+  subCategory: string
+  amount: number
+  memo: string
 }
 
 export interface FindingView {
@@ -54,6 +81,9 @@ export interface ExtractionView {
   file: FileInfo
   accounts: AccountView[]
   transactions: TransactionView[]
+  categories: CategorySummaryView[]
+  transfers: TransferView[]
+  splits: SplitView[]
   skipped: number
   diagnostics: DiagnosticsView
   validation: FindingView[]

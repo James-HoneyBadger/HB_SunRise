@@ -14,7 +14,7 @@ import { useVirtual } from './virtual'
 import RawInspector from './Raw'
 import { IncomeVersusExpense, CategoryBars, CumulativeLine, monthlySeries, spendingByCategory, cumulativeByAccount } from './charts'
 
-type Tab = 'overview' | 'accounts' | 'transactions' | 'reports' | 'validation' | 'raw'
+type Tab = 'overview' | 'accounts' | 'transactions' | 'categories' | 'transfers' | 'splits' | 'reports' | 'validation' | 'raw'
 
 const FORMATS: { key: string; name: string }[] = [
   { key: 'csv', name: 'CSV' },
@@ -165,7 +165,7 @@ export default function App() {
         </div>
 
         <nav>
-          {(['overview', 'accounts', 'transactions', 'reports', 'validation', 'raw'] as Tab[]).map((key) => (
+          {(['overview', 'accounts', 'transactions', 'categories', 'transfers', 'splits', 'reports', 'validation', 'raw'] as Tab[]).map((key) => (
             <button key={key} className={tab === key ? 'nav active' : 'nav'} disabled={!view && key !== 'overview'} onClick={() => setTab(key)}>
               {key[0].toUpperCase() + key.slice(1)}
               {key === 'validation' && !view && <span className="hint"> </span>}
@@ -358,6 +358,7 @@ export default function App() {
                         <span className="mono">{t.time}</span>
                         <span>
                           <span className={`chip ${t.type.toLowerCase()}`}>{t.type}</span>
+                          {t.split && <span className="chip" title="Split transaction fragment">split</span>}
                         </span>
                         <span>{t.account}</span>
                         <span className="mono amount">{amountOf(t.amount)}</span>
@@ -379,6 +380,104 @@ export default function App() {
                     ))}
                   </div>
                 </div>
+              </section>
+            )}
+
+            {tab === 'categories' && (
+              <section className="table-wrap">
+                <p className="muted">{view.categories.length} category paths with activity.</p>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Category</th>
+                      <th className="amount">Count</th>
+                      <th className="amount">Expense</th>
+                      <th className="amount">Income</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {view.categories.map((category) => (
+                      <tr key={category.path}>
+                        <td>{category.path}</td>
+                        <td className="mono amount">{category.count}</td>
+                        <td className="mono amount">{category.expense !== 0 ? amountOf(category.expense) : '—'}</td>
+                        <td className="mono amount">{category.income !== 0 ? amountOf(category.income) : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+            )}
+
+            {tab === 'transfers' && (
+              <section className="table-wrap">
+                <p className="muted">
+                  {view.transfers.length} transfers. A transfer is shown as matched when the receiving side carried its own amount.
+                </p>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>From</th>
+                      <th>To</th>
+                      <th className="amount">Amount</th>
+                      <th className="amount">Received</th>
+                      <th>Match</th>
+                      <th>Memo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {view.transfers.map((transfer, index) => (
+                      <tr key={index}>
+                        <td className="mono">{transfer.date}</td>
+                        <td>{transfer.account}</td>
+                        <td>{transfer.transferAccount}</td>
+                        <td className="mono amount">{amountOf(transfer.amount)}</td>
+                        <td className="mono amount">{transfer.matched ? amountOf(transfer.transferAmount) : '—'}</td>
+                        <td>
+                          <span className={`chip ${transfer.matched ? 'matched' : 'uncertain'}`}>
+                            {transfer.matched ? 'matched' : 'source used'}
+                          </span>
+                        </td>
+                        <td className="muted">{transfer.memo}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+            )}
+
+            {tab === 'splits' && (
+              <section className="table-wrap">
+                <p className="muted">
+                  {view.splits.length} split fragments. Each row preserves its own category and amount as stored in the file.
+                </p>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Account</th>
+                      <th>Category</th>
+                      <th className="amount">Amount</th>
+                      <th>Memo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {view.splits.map((fragment, index) => (
+                      <tr key={index}>
+                        <td className="mono">{fragment.date}</td>
+                        <td>{fragment.account}</td>
+                        <td>
+                          {fragment.category && <span>{fragment.category}</span>}
+                          {fragment.category && fragment.subCategory && <span className="muted"> / {fragment.subCategory}</span>}
+                          {!fragment.category && fragment.subCategory && <span>{fragment.subCategory}</span>}
+                        </td>
+                        <td className="mono amount">{amountOf(fragment.amount)}</td>
+                        <td className="muted">{fragment.memo}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </section>
             )}
 

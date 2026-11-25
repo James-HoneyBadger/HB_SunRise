@@ -436,6 +436,10 @@ td.amount {
   background: var(--chip-transfer);
 }
 
+.chip.matched {
+  background: var(--chip-income);
+}
+
 .finding {
   display: flex;
   gap: 12px;
