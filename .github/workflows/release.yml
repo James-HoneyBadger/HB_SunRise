@@ -54,6 +54,9 @@ jobs:
           - os: ubuntu-latest
             name: linux-amd64
             wails-tags: -tags webkit2_41
+          - os: ubuntu-24.04-arm
+            name: linux-arm64
+            wails-tags: -tags webkit2_41
           - os: windows-latest
             name: windows-amd64
             wails-tags: ""
