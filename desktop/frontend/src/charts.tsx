@@ -84,7 +84,7 @@ export function spendingByPayee(transactions: TransactionView[], limit: number):
 // transactions, not a Money account balance: the file's opening balances are
 // not decoded, so the report labels the chart accordingly.
 export function cumulativeByAccount(transactions: TransactionView[], account: string): AccountPoint[] {
-  const ordered = transactions.filter((transaction) => account === '' || transaction.account === account)
+  const ordered = transactions.filter((t) => account === '' || t.account === account || (t.type === 'Transfer' && t.transferAccount === account))
   ordered.sort((left, right) => left.time.localeCompare(right.time))
 
   let running = 0
@@ -94,16 +94,11 @@ export function cumulativeByAccount(transactions: TransactionView[], account: st
     if (transaction.type === 'Income') running += transaction.amount
     else if (transaction.type === 'Expense') running -= transaction.amount
     else if (transaction.type === 'Transfer') {
-      running -= transaction.amount
-      points.push({ date: transaction.time, value: running })
-
-      if (account === '' || account === transaction.transferAccount) {
+      if (account === '' || transaction.account === account) running -= transaction.amount
+      if (account === '' || transaction.transferAccount === account) {
         running += transaction.transferAmount > 0 ? transaction.transferAmount : transaction.amount
       }
-
-      continue
     }
-
     points.push({ date: transaction.time, value: running })
   }
 
