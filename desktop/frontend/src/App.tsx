@@ -347,7 +347,7 @@ export default function App() {
                     <dt>Transactions</dt>
                     <dd>{view.transactions.length}</dd>
                     <dt>Rows left out</dt>
-                    <dd>{view.skipped}</dd>
+                    <dd>{view.skipped > 0 ? `${view.skipped} — ${view.skippedReasons.join(', ')}` : '0'}</dd>
                   </dl>
                 </div>
                 <div className="card">

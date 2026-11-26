@@ -14,10 +14,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -83,6 +85,7 @@ type extractionView struct {
 	Transfers         []transferView               `json:"transfers"`
 	Splits            []splitView                  `json:"splits"`
 	Skipped           int                          `json:"skipped"`
+	SkippedReasons    []string                     `json:"skippedReasons"`
 	Diagnostics       msmoney.ExtractedDiagnostics `json:"diagnostics"`
 	Validation        []findingView                `json:"validation"`
 	ValidationSummary validationSummaryView        `json:"validationSummary"`
@@ -173,6 +176,10 @@ type App struct {
 	extracted  *msmoney.ExtractedData
 	cancel     context.CancelFunc
 	inspection *inspectionSession
+	// inspectMu serializes the raw inspection session: a Database memoizes
+	// pages on first use and is documented as not thread-safe, and Wails calls
+	// each bound method on its own goroutine.
+	inspectMu sync.Mutex
 }
 
 // NewApp returns the application the window binds.
@@ -255,15 +262,16 @@ func buildExtractionView(path string, data []byte, extracted *msmoney.ExtractedD
 			Size:   int64(len(data)),
 			Sha256: hex.EncodeToString(hash[:]),
 		},
-		Accounts:     make([]accountView, 0, len(extracted.Accounts)),
-		Transactions: make([]transactionView, 0, len(extracted.Transactions)),
-		Categories:   make([]categorySummaryView, 0),
-		Transfers:    make([]transferView, 0),
-		Splits:       make([]splitView, 0),
-		Skipped:      extracted.Skipped,
-		Diagnostics:  extracted.Diagnostics,
-		Validation:   make([]findingView, 0, len(report.Findings)),
-		Elapsed:      time.Since(start).Round(time.Millisecond).String(),
+		Accounts:       make([]accountView, 0, len(extracted.Accounts)),
+		Transactions:   make([]transactionView, 0, len(extracted.Transactions)),
+		Categories:     make([]categorySummaryView, 0),
+		Transfers:      make([]transferView, 0),
+		Splits:         make([]splitView, 0),
+		Skipped:        extracted.Skipped.Total(),
+		SkippedReasons: extracted.Skipped.Reasons(),
+		Diagnostics:    extracted.Diagnostics,
+		Validation:     make([]findingView, 0, len(report.Findings)),
+		Elapsed:        time.Since(start).Round(time.Millisecond).String(),
 	}
 
 	for _, account := range extracted.Accounts {
@@ -584,7 +592,7 @@ func (a *App) addRecent(path string) {
 		return
 	}
 
-		_ = os.WriteFile(store, []byte(strings.Join(filtered, "\n")+"\n"), 0o600)
+	_ = os.WriteFile(store, []byte(strings.Join(filtered, "\n")+"\n"), 0o600)
 }
 
 // describeExtractionError explains an extraction failure in the window's
@@ -688,7 +696,9 @@ func (a *App) Inspect(path string) (*inspectionView, error) {
 		return nil, describeExtractionError(fmt.Errorf("%w: %v", kind, err))
 	}
 
+	a.inspectMu.Lock()
 	a.inspection = &inspectionSession{data: data, database: database}
+	a.inspectMu.Unlock()
 
 	hash := sha256.Sum256(data)
 
@@ -751,6 +761,9 @@ func (a *App) Inspect(path string) (*inspectionView, error) {
 // human-readable values. The record walk honours Cancel. Only the page is
 // collected, so a large table stays responsive.
 func (a *App) InspectRows(tableName string, offset int, limit int) (*rowsView, error) {
+	a.inspectMu.Lock()
+	defer a.inspectMu.Unlock()
+
 	if a.inspection == nil {
 		return nil, errors.New("inspect a file first")
 	}
@@ -904,7 +917,7 @@ func renderFieldValue(database *msisam.Database, field msisam.Field) string {
 			return "(cannot decode)"
 		}
 
-		return fmt.Sprintf("%g", value)
+		return formatExactRat(value, field.Column.Scale)
 	case msisam.ColumnTypeDateTime:
 		value, ok := database.Time(field)
 
@@ -944,6 +957,21 @@ func renderFieldValue(database *msisam.Database, field msisam.Field) string {
 	default:
 		return fmt.Sprintf("(type %s)", field.Column.Type)
 	}
+}
+
+// formatExactRat renders an exact numeric value as its shortest exact decimal:
+// the rational always has 10^scale as its denominator, so scale decimal places
+// are always enough to write it without rounding.
+func formatExactRat(value *big.Rat, scale int) string {
+	text := value.FloatString(scale)
+	text = strings.TrimRight(text, "0")
+	text = strings.TrimRight(text, ".")
+
+	if text == "-0" {
+		return "0"
+	}
+
+	return text
 }
 
 func pageTypeName(pageType byte) string {
