@@ -170,6 +170,7 @@ func (c appContext) GetClientLocale() string {
 type App struct {
 	ctx        context.Context
 	session    *extractionView
+	extracted  *msmoney.ExtractedData
 	cancel     context.CancelFunc
 	inspection *inspectionSession
 }
@@ -235,6 +236,7 @@ func (a *App) OpenPath(path string) (*extractionView, error) {
 	view := buildExtractionView(path, data, extracted, report, start)
 
 	a.session = view
+	a.extracted = extracted
 	a.addRecent(path)
 
 	return view, nil
@@ -437,20 +439,27 @@ func (a *App) Export(path string, key string) error {
 		return errors.New("the file already exists; choose another name")
 	}
 
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 
 	if err != nil {
 		return err
 	}
 
-	defer file.Close()
-
-	return export.Write(key, file, "HB SunRise", a.sessionData())
+	writeErr := export.Write(key, file, "HB SunRise", a.sessionData())
+	closeErr := file.Close()
+	if writeErr != nil || closeErr != nil {
+		_ = os.Remove(path)
+		return errors.Join(writeErr, closeErr)
+	}
+	return nil
 }
 
 // data rebuilds the extracted data the session was built from, so exports do
 // not need to keep the engine's structs around.
 func (a *App) sessionData() *msmoney.ExtractedData {
+	if a.extracted != nil {
+		return a.extracted
+	}
 	if a.session == nil {
 		return &msmoney.ExtractedData{}
 	}
@@ -544,7 +553,10 @@ func (a *App) ClearRecentFiles() error {
 		return err
 	}
 
-	return os.Remove(path)
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 func (a *App) addRecent(path string) {
@@ -572,9 +584,7 @@ func (a *App) addRecent(path string) {
 		return
 	}
 
-	sort.Strings(filtered[1:])
-
-	_ = os.WriteFile(store, []byte(strings.Join(filtered, "\n")+"\n"), 0o600)
+		_ = os.WriteFile(store, []byte(strings.Join(filtered, "\n")+"\n"), 0o600)
 }
 
 // describeExtractionError explains an extraction failure in the window's

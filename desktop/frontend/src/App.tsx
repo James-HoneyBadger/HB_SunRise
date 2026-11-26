@@ -11,6 +11,7 @@ import {
 } from '../wailsjs/go/main/App'
 import type { ExtractionView, Progress } from './bindings'
 import { useVirtual } from './virtual'
+import { filterLedger, summarizeLedger, emptyLedgerFilter, formatMinor } from './ledger'
 import RawInspector from './Raw'
 import { IncomeVersusExpense, CategoryBars, CumulativeLine, monthlySeries, spendingByCategory, spendingByPayee, cumulativeByAccount } from './charts'
 
@@ -48,6 +49,7 @@ export default function App() {
   const [exportKey, setExportKey] = useState('honeyledger')
   const [exportNote, setExportNote] = useState('')
   const [query, setQuery] = useState('')
+  const [ledgerFilter, setLedgerFilter] = useState(emptyLedgerFilter)
   const [sort, setSort] = useState<{ field: 'time' | 'amount' | 'account'; dir: 1 | -1 }>({ field: 'time', dir: 1 })
 
   const refreshRecent = useCallback(() => {
@@ -79,6 +81,8 @@ export default function App() {
       try {
         const result = await OpenPath(path)
         setView(result)
+        setQuery('')
+        setLedgerFilter(emptyLedgerFilter)
         setTab('overview')
         refreshRecent()
       } catch (err) {
@@ -164,31 +168,34 @@ export default function App() {
 
   const transactions = useMemo(() => {
     if (!view) return []
-    const filtered = view.transactions.filter((t) => {
-      const hay = `${t.account} ${t.memo} ${t.category} ${t.subCategory} ${t.transferAccount} ${t.type}`.toLowerCase()
-      return hay.includes(query.toLowerCase())
-    })
+    const filtered = filterLedger(view.transactions, { ...ledgerFilter, query })
     const dir = sort.dir
     return [...filtered].sort((a, b) => {
       if (sort.field === 'time') return a.time.localeCompare(b.time) * dir
       if (sort.field === 'amount') return (a.amount - b.amount) * dir
       return a.account.localeCompare(b.account) * dir
     })
-  }, [view, query, sort])
+  }, [view, query, sort, ledgerFilter])
+  const ledgerTotals = useMemo(() => summarizeLedger(transactions), [transactions])
 
   const [reportAccount, setReportAccount] = useState('')
 
   const confirmed = view?.validation.filter((f) => f.severity === 'confirmed').length ?? 0
   const uncertain = view?.validation.filter((f) => f.severity === 'uncertain').length ?? 0
 
-  const virtual = useVirtual(transactions.length, 34)
+  const virtual = useVirtual(transactions.length, 34, 8, tab === 'transactions', transactions)
 
-  const monthly = useMemo(() => (view ? monthlySeries(view.transactions) : []), [view])
-  const categories = useMemo(() => (view ? spendingByCategory(view.transactions, 10) : []), [view])
-  const payees = useMemo(() => (view ? spendingByPayee(view.transactions, 10) : []), [view])
+  const [reportCurrency, setReportCurrency] = useState('')
+  const currencies = useMemo(() => [...new Set((view?.transactions ?? []).map(t => t.currency))].sort(), [view])
+  const selectedCurrency = currencies.includes(reportCurrency) ? reportCurrency : (currencies[0] ?? '')
+  const mixedCurrencies = currencies.length > 1 || (view?.accounts.some(a => a.currency !== selectedCurrency) ?? false)
+  const scoped = useMemo(() => (view?.transactions ?? []).filter(t => t.currency === selectedCurrency && t.currency !== ''), [view, selectedCurrency])
+  const monthly = useMemo(() => monthlySeries(scoped), [scoped])
+  const categories = useMemo(() => spendingByCategory(scoped, 10), [scoped])
+  const payees = useMemo(() => spendingByPayee(scoped, 10), [scoped])
   const cumulative = useMemo(
-    () => (view ? cumulativeByAccount(view.transactions, reportAccount) : []),
-    [view, reportAccount],
+    () => (view && !mixedCurrencies && selectedCurrency ? cumulativeByAccount(view.transactions, reportAccount) : []),
+    [view, reportAccount, mixedCurrencies, selectedCurrency],
   )
 
   const diagnosticsEmpty =
@@ -373,7 +380,7 @@ export default function App() {
                   <tbody>
                     {view.accounts.map((account) => (
                       <tr key={account.name}>
-                        <td>{account.name}</td>
+                        <td><button className="link" onClick={() => { setQuery(''); setLedgerFilter({ ...emptyLedgerFilter, account: account.name }); setTab('transactions') }}>{account.name}</button></td>
                         <td className="mono">{account.currency}</td>
                         <td>
                           {account.closed && <span className="chip muted-chip" title="Marked closed in the file">closed</span>}
@@ -390,10 +397,34 @@ export default function App() {
             {tab === 'transactions' && (
               <section className="table-wrap">
                 <div className="table-tools">
-                  <input placeholder="Search accounts, memos, categories…" value={query} onChange={(e) => setQuery(e.target.value)} />
+                  <input aria-label="Search transactions" placeholder="Search accounts, payees, currencies, memos…" value={query} onChange={(e) => setQuery(e.target.value)} />
+                  <button className="secondary" onClick={() => { setQuery(''); setLedgerFilter(emptyLedgerFilter) }}>Reset filters</button>
                   <span className="muted">
                     {transactions.length} of {view.transactions.length} transactions
                   </span>
+                </div>
+                <div className="table-tools" style={{ flexWrap: 'wrap' }}>
+                  <label>Account <select value={ledgerFilter.account} onChange={e => setLedgerFilter(f => ({ ...f, account: e.target.value }))}>
+                    <option value="">All accounts</option>
+                    {[...new Set(view.accounts.map(a => a.name))].sort().map(name => <option key={name}>{name}</option>)}
+                  </select></label>
+                  <label>Type <select value={ledgerFilter.type} onChange={e => setLedgerFilter(f => ({ ...f, type: e.target.value }))}>
+                    <option value="">All types</option>
+                    {[...new Set(view.transactions.map(t => t.type))].sort().map(type => <option key={type}>{type}</option>)}
+                  </select></label>
+                  <label>Source currency <select value={ledgerFilter.currency} onChange={e => setLedgerFilter(f => ({ ...f, currency: e.target.value }))}>
+                    <option value="">All currencies</option>
+                    {currencies.filter(Boolean).map(currency => <option key={currency}>{currency}</option>)}
+                  </select></label>
+                  <label>From <input type="date" value={ledgerFilter.from} onChange={e => setLedgerFilter(f => ({ ...f, from: e.target.value }))} /></label>
+                  <label>Through <input type="date" value={ledgerFilter.through} onChange={e => setLedgerFilter(f => ({ ...f, through: e.target.value }))} /></label>
+                </div>
+                {ledgerFilter.from && ledgerFilter.through && ledgerFilter.from > ledgerFilter.through && <p className="warn">The start date is after the end date.</p>}
+                <p className="muted small">Account filtering includes transfers into or out of the account. Amounts are source-row amounts, not account balances. Export still writes the entire extraction.</p>
+                <div className="card">
+                  <h2>Filtered cash flow (excluding transfers)</h2>
+                  {ledgerTotals.length === 0 && <p className="muted">No income or expense rows in this selection.</p>}
+                  {ledgerTotals.map(total => <p key={total.currency} className="mono">{total.currency || 'Unknown currency'} · {total.valid ? `Income ${formatMinor(total.income)} · Expense ${formatMinor(total.expense)} · Net ${formatMinor(total.income - total.expense)}` : 'Totals unavailable: amount exceeds safe integer precision or currency is unknown'}</p>)}
                 </div>
                 <div className="virt-head">
                   <span className="sortable" onClick={() => setSort({ field: 'time', dir: sort.field === 'time' ? ((sort.dir * -1) as 1 | -1) : 1 })}>
@@ -419,7 +450,7 @@ export default function App() {
                           {t.split && <span className="chip" title="Split transaction fragment">split</span>}
                         </span>
                         <span>{t.account}</span>
-                        <span className="mono amount">{amountOf(t.amount)}</span>
+                        <span className="mono amount">{Number.isSafeInteger(t.amount) ? amountOf(t.amount) : 'Unsafe amount'} {t.currency || '?'}</span>
                         <span>
                           {t.transferAccount && (
                             <span className="muted">
@@ -444,7 +475,7 @@ export default function App() {
 
             {tab === 'categories' && (
               <section className="table-wrap">
-                <p className="muted">{view.categories.length} category paths with activity.</p>
+                <p className="muted">{view.categories.length} category paths with activity. {mixedCurrencies || !selectedCurrency ? 'Monetary totals hidden because currencies cannot safely be combined.' : selectedCurrency}</p>
                 <table>
                   <thead>
                     <tr>
@@ -459,8 +490,8 @@ export default function App() {
                       <tr key={category.path}>
                         <td>{category.path}</td>
                         <td className="mono amount">{category.count}</td>
-                        <td className="mono amount">{category.expense !== 0 ? amountOf(category.expense) : '—'}</td>
-                        <td className="mono amount">{category.income !== 0 ? amountOf(category.income) : '—'}</td>
+                        <td className="mono amount">{mixedCurrencies || !selectedCurrency ? '—' : category.expense !== 0 ? amountOf(category.expense) : '—'}</td>
+                        <td className="mono amount">{mixedCurrencies || !selectedCurrency ? '—' : category.income !== 0 ? amountOf(category.income) : '—'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -470,7 +501,7 @@ export default function App() {
 
             {tab === 'payees' && (
               <section className="table-wrap">
-                <p className="muted">{view.payees.length} payees named on transactions.</p>
+                <p className="muted">{view.payees.length} payees named on transactions. {mixedCurrencies || !selectedCurrency ? 'Monetary totals hidden because currencies cannot safely be combined.' : selectedCurrency}</p>
                 <table>
                   <thead>
                     <tr>
@@ -485,8 +516,8 @@ export default function App() {
                       <tr key={payee.name}>
                         <td>{payee.name}</td>
                         <td className="mono amount">{payee.count}</td>
-                        <td className="mono amount">{payee.expense !== 0 ? amountOf(payee.expense) : '—'}</td>
-                        <td className="mono amount">{payee.income !== 0 ? amountOf(payee.income) : '—'}</td>
+                        <td className="mono amount">{mixedCurrencies || !selectedCurrency ? '—' : payee.expense !== 0 ? amountOf(payee.expense) : '—'}</td>
+                        <td className="mono amount">{mixedCurrencies || !selectedCurrency ? '—' : payee.income !== 0 ? amountOf(payee.income) : '—'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -570,6 +601,10 @@ export default function App() {
               <section className="grid">
                 <div className="card wide">
                   <h2>Income versus expenses</h2>
+                  <label>Report currency <select value={selectedCurrency} onChange={e => setReportCurrency(e.target.value)}>
+                    {currencies.map(currency => <option key={currency} value={currency}>{currency || 'Unknown currency'}</option>)}
+                  </select></label>
+                  <p className="muted small">Reports use one source currency at a time; no exchange rates are inferred.</p>
                   {monthly.length > 0 ? <IncomeVersusExpense months={monthly} /> : <p className="muted">No income or expense transactions to chart.</p>}
                 </div>
                 <div className="card">
@@ -590,7 +625,7 @@ export default function App() {
                       </option>
                     ))}
                   </select>
-                  <CumulativeLine points={cumulative} />
+                  {mixedCurrencies || !selectedCurrency ? <p className="warn">Cumulative history is unavailable for mixed or unknown currencies until currency-aware transfer reconciliation is supported.</p> : <CumulativeLine points={cumulative} />}
                   <p className="muted small">
                     Calculated from the transactions this file holds; it is not a Money account balance, because opening balances are not decoded.
                   </p>
@@ -614,8 +649,8 @@ export default function App() {
                     <strong>{view.validationSummary.transferCount}</strong> transfers
                   </span>
                   <span className="mono">
-                    {view.validationSummary.incomeTotal !== 0 && `in ${amountOf(view.validationSummary.incomeTotal)}`}
-                    {view.validationSummary.expenseTotal !== 0 && ` · out ${amountOf(view.validationSummary.expenseTotal)}`}
+                    {!mixedCurrencies && selectedCurrency && view.validationSummary.incomeTotal !== 0 && `in ${amountOf(view.validationSummary.incomeTotal)}`}
+                    {!mixedCurrencies && selectedCurrency && view.validationSummary.expenseTotal !== 0 && ` · out ${amountOf(view.validationSummary.expenseTotal)}`}
                   </span>
                   {view.validationSummary.earliest && (
                     <span className="mono">
@@ -624,7 +659,7 @@ export default function App() {
                   )}
                 </div>
                 <p className="muted small">
-                  Counts and totals are calculated from the transactions this file holds; they are not Money account balances.
+                  {mixedCurrencies || !selectedCurrency ? 'Monetary totals hidden because currencies cannot safely be combined. ' : ''} Counts and totals are calculated from the transactions this file holds; they are not Money account balances.
                 </p>
                 {view.validation.length === 0 && <p className="muted">Validation found nothing to report.</p>}
                 {view.validation.map((finding, index) => (

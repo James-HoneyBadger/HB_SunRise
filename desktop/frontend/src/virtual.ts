@@ -12,7 +12,7 @@ export interface VirtualSlice {
   containerRef: React.RefObject<HTMLDivElement | null>
 }
 
-export function useVirtual(total: number, rowHeight: number, overscan = 8): VirtualSlice {
+export function useVirtual(total: number, rowHeight: number, overscan = 8, active = true, resetKey?: unknown): VirtualSlice {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [windowHeight, setWindowHeight] = useState(600)
   const [scrollTop, setScrollTop] = useState(0)
@@ -31,13 +31,18 @@ export function useVirtual(total: number, rowHeight: number, overscan = 8): Virt
     observer.observe(container)
 
     return () => observer.disconnect()
-  }, [])
+  }, [active])
+
+  useEffect(() => {
+    if (containerRef.current) containerRef.current.scrollTop = 0
+    setScrollTop(0)
+  }, [resetKey, active])
 
   const onScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
     setScrollTop(event.currentTarget.scrollTop)
   }, [])
 
-  const first = Math.max(0, Math.floor(scrollTop / rowHeight) - overscan)
+  const first = Math.min(Math.max(0, total - 1), Math.max(0, Math.floor(scrollTop / rowHeight) - overscan))
   const visible = Math.ceil(windowHeight / rowHeight) + overscan * 2
   const end = Math.min(total, first + visible)
 

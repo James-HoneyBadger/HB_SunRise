@@ -66,6 +66,7 @@ jobs:
         run: |
           export PATH="$PATH:$(go env GOPATH)/bin"
           npm --prefix frontend ci
+          node --experimental-strip-types --test frontend/tests/ledger.test.mjs
           npm --prefix frontend run build
           wails generate module
           wails build -tags webkit2_41 -skipbindings
