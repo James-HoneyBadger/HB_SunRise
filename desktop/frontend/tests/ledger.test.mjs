@@ -24,3 +24,19 @@ test('unsafe and unknown source values suppress totals', () => {
   assert.equal(summarizeLedger([row({amount:Number.MAX_SAFE_INTEGER+1})])[0].valid,false)
   assert.equal(summarizeLedger([row({currency:''})])[0].valid,false)
 })
+
+import { accountHistory } from '../src/history.ts'
+test('history refuses unknown incoming transfer rather than inventing a value', () => {
+  const transfer = row({type:'Transfer',account:'Savings',transferAccount:'Checking',amount:500,transferAmount:0})
+  assert.ok(accountHistory([transfer],'Checking').issue)
+  assert.equal(accountHistory([transfer],'Savings').points[0].value,-500)
+  assert.ok(accountHistory([transfer],'').issue)
+})
+test('history uses actual receiving amount and signed source changes', () => {
+  const rows=[row({type:'Income',amount:1000}),row({amount:125}),row({type:'Transfer',account:'Savings',transferAccount:'Checking',amount:500,transferAmount:490})]
+  assert.deepEqual(accountHistory(rows,'Checking').points.map(p=>p.value),[1000,875,1365])
+})
+test('history rejects unsafe amounts and cumulative overflow', () => {
+  assert.ok(accountHistory([row({amount:Number.MAX_SAFE_INTEGER+1})],'Checking').issue)
+  assert.ok(accountHistory([row({type:'Income',amount:Number.MAX_SAFE_INTEGER}),row({type:'Income',amount:1})],'Checking').issue)
+})

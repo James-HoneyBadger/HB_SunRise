@@ -83,28 +83,6 @@ export function spendingByPayee(transactions: TransactionView[], limit: number):
 // transactions in the file imply. It is a calculation over the decoded
 // transactions, not a Money account balance: the file's opening balances are
 // not decoded, so the report labels the chart accordingly.
-export function cumulativeByAccount(transactions: TransactionView[], account: string): AccountPoint[] {
-  const ordered = transactions.filter((t) => account === '' || t.account === account || (t.type === 'Transfer' && t.transferAccount === account))
-  ordered.sort((left, right) => left.time.localeCompare(right.time))
-
-  let running = 0
-  const points: AccountPoint[] = []
-
-  for (const transaction of ordered) {
-    if (transaction.type === 'Income') running += transaction.amount
-    else if (transaction.type === 'Expense') running -= transaction.amount
-    else if (transaction.type === 'Transfer') {
-      if (account === '' || transaction.account === account) running -= transaction.amount
-      if (account === '' || transaction.transferAccount === account) {
-        running += transaction.transferAmount > 0 ? transaction.transferAmount : transaction.amount
-      }
-    }
-    points.push({ date: transaction.time, value: running })
-  }
-
-  return points
-}
-
 export function amountLabel(amount: number): string {
   return (amount / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
@@ -199,9 +177,8 @@ export function CumulativeLine({ points }: LineChartProps) {
     return <p className="muted">Not enough transactions to draw a history.</p>
   }
 
-  const values = points.map((point) => point.value)
-  const min = Math.min(0, ...values)
-  const max = Math.max(0, ...values)
+  const min = points.reduce((v, p) => Math.min(v, p.value), 0)
+  const max = points.reduce((v, p) => Math.max(v, p.value), 0)
   const span = Math.max(1, max - min)
 
   const x = (index: number) => pad + (index / (points.length - 1)) * (width - pad * 2)

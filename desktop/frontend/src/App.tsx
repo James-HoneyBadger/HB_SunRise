@@ -13,7 +13,8 @@ import type { ExtractionView, Progress } from './bindings'
 import { useVirtual } from './virtual'
 import { filterLedger, summarizeLedger, emptyLedgerFilter, formatMinor } from './ledger'
 import RawInspector from './Raw'
-import { IncomeVersusExpense, CategoryBars, CumulativeLine, monthlySeries, spendingByCategory, spendingByPayee, cumulativeByAccount } from './charts'
+import { IncomeVersusExpense, CategoryBars, CumulativeLine, monthlySeries, spendingByCategory, spendingByPayee } from './charts'
+import { accountHistory } from './history'
 
 type Tab = 'overview' | 'accounts' | 'transactions' | 'categories' | 'payees' | 'transfers' | 'splits' | 'reports' | 'validation' | 'raw'
 
@@ -194,7 +195,7 @@ export default function App() {
   const categories = useMemo(() => spendingByCategory(scoped, 10), [scoped])
   const payees = useMemo(() => spendingByPayee(scoped, 10), [scoped])
   const cumulative = useMemo(
-    () => (view && !mixedCurrencies && selectedCurrency ? cumulativeByAccount(view.transactions, reportAccount) : []),
+    () => (view && !mixedCurrencies && selectedCurrency ? accountHistory(view.transactions, reportAccount) : { points: [], issue: '' }),
     [view, reportAccount, mixedCurrencies, selectedCurrency],
   )
 
@@ -625,7 +626,7 @@ export default function App() {
                       </option>
                     ))}
                   </select>
-                  {mixedCurrencies || !selectedCurrency ? <p className="warn">Cumulative history is unavailable for mixed or unknown currencies until currency-aware transfer reconciliation is supported.</p> : <CumulativeLine points={cumulative} />}
+                  {mixedCurrencies || !selectedCurrency ? <p className="warn">Cumulative history is unavailable for mixed or unknown currencies until currency-aware transfer reconciliation is supported.</p> : cumulative.issue ? <p className="warn">History unavailable: {cumulative.issue}</p> : <CumulativeLine points={cumulative.points} />}
                   <p className="muted small">
                     Calculated from the transactions this file holds; it is not a Money account balance, because opening balances are not decoded.
                   </p>
