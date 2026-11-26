@@ -11,6 +11,13 @@ permissions:
   contents: read
 
 jobs:
+  money-engine-parity:
+    name: Shared Money engine manifest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: python3 scripts/check-money-engine.py
+
   test:
     strategy:
       fail-fast: false
