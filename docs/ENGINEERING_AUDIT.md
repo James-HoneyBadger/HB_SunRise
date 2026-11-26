@@ -7,7 +7,8 @@ build on.
 
 Audited revision: `255d106` (main), 2026-11-24. All 6,250 lines of Go, the
 tests, the build script, both workflows and the documentation were inspected.
-Updated at the end of Phase 2 (see §10) with the defects the phase closed.
+Updated at the end of Phase 2 (see §10) with the defects the phase closed, and
+again on 2026-11-26 (see §12) with the defect-closure and hygiene sweep.
 
 ---
 
@@ -31,11 +32,11 @@ carries), has no GUI, and is fully offline.
 
 ### Test status (run fresh, `go test -count=1 ./...`)
 
-- **83 tests PASS** in the root module across `msisam`, `msmoney`, `export`
-  and the CLI, plus **6 desktop-module tests** (including the end-to-end
+- **86 tests PASS** in the root module across `msisam`, `msmoney`, `export`
+  and the CLI, plus **8 desktop-module tests** (including the end-to-end
   pipeline tests over synthetic `.mny`/`.mbf` files, the malformed-input
-  hardening tests, the cross-currency transfer tests, and the workspace
-  derivation tests).
+  hardening tests, the cross-currency transfer tests, the workspace
+  derivation tests, and the concurrent raw-inspection race test).
 - **3 tests SKIP** and are therefore **not validated**:
   - `TestRealDatabaseExtract` (`msmoney`)
   - `TestOpenRealDatabase`, `TestRealDatabaseTables` (`msisam`)
@@ -47,8 +48,9 @@ carries), has no GUI, and is fully offline.
   verification is not reproducible here and must not be counted as validation
   of the current code. Re-running it is a standing task (see §8).
 
-No test fails today. `go vet ./...` and `gofmt` are clean; CI runs
-`go vet` + `go test -race` on Linux, macOS and Windows and is green.
+No test fails today. `go vet ./...` is clean on both modules; CI runs
+`go vet` + `go test -race` on Linux, macOS and Windows, and — since §12 —
+a formatting check and the offline check on top.
 
 ---
 
@@ -135,31 +137,34 @@ never touches the file system and never modifies the input buffer.
    single-byte encoded under a non-Western code page will decode incorrectly.
    (Needs a real-file reproduction before changing; today only ASCII is
    verified.)
-4. **Floating point is authoritative in the generic value layer.**
-   `Database.Value` returns `float64` for `Money`, `Float`, `Double` and
-   `Numeric`. The extraction path avoids this by reading raw scaled integers,
-   so exported money is exact — but any future consumer of `Value` (a database
-   inspector, a validator) would get binary floating point for money. Phase 6
-   requires exact arithmetic: the value layer must expose scaled integers (or
-   `big.Rat`) as the primary form, with float only as an opt-in convenience.
-5. **`Numeric` decoding is lossy by construction.** The 16-byte magnitude is
-   crammed into `uint64` then scaled by repeated floating-point division;
-   magnitudes wider than 64 bits and non-decimal scales lose precision.
-   Nothing in the current pipeline uses `Numeric`; it is nevertheless a latent
-   correctness trap for Phase 5 (shares, prices).
-6. **`expandText` drops a trailing odd byte** when a compressed block ends with
-   a lone byte in uncompressed state, and a stray `0x00` toggles the encoding
-   silently. Text with embedded NULs or odd tail bytes can decode short with no
-   error. Low probability, unverified against real files.
+4. ~~Floating point is authoritative in the generic value layer.~~
+   **Fixed in §12.** `Database.Value` returns the scaled `int64` the file
+   stores for `Money` and `*big.Rat` for `Numeric`; `Float` and `Double`
+   remain `float64` because that is their stored IEEE-754 form. `Numeric`
+   now decodes the full 16-byte magnitude exactly instead of through
+   `uint64` and repeated floating-point division.
+5. ~~`Numeric` decoding is lossy by construction.~~ **Fixed in §12.** See
+   defect 4: `Database.Numeric` returns `*big.Rat` with `10^scale` as the
+   exact denominator; nothing passes through floating point.
+6. ~~`expandText` drops a trailing odd byte~~ when a compressed block ends
+   with a lone byte in uncompressed state, and a stray `0x00` toggles the
+   encoding silently. **Fixed in §12.** A lone trailing byte in the
+   uncompressed state is now reported: `String` returns `ErrCorruptRow`,
+   a column name that cannot be decoded fails its definition
+   (`ErrCorruptDefinition`, counted once), and a catalog name that cannot
+   be decoded is counted as an unreadable catalog entry. A stray `0x00`
+   toggle that produces even-length but wrong text remains undetectable
+   without the original string; it is inherent to the toggle encoding.
 7. **Transfer counterpart matching is a heuristic.** Same-day transfers are
    matched by direction, then disambiguated by memo; equal memos in the same
    direction on the same day take the first match. The fallback (source amount
    reused) never fabricates, but the report does not tell the user which
    transfers were matched heuristically versus exactly. Phase 6 requires
    distinguishing recovered from calculated data.
-8. **`Database` is documented as not thread-safe** and memoizes `dataPages` on
-   first use. Fine for today's single-threaded extractor; the GUI (background
-   extraction with cancellation) must either serialize or snapshot.
+8. ~~`Database` is documented as not thread-safe~~ and memoizes `dataPages` on
+   first use. **Fixed in §12 for the desktop app:** the raw inspection
+   session is serialized behind a mutex, and a race-detector test walks
+   pages concurrently to keep it honest.
 
 ## 4. Unsupported record types and missing features
 
@@ -193,9 +198,12 @@ Do not claim support for any of the above until real-file-verified (§8).
   SHA-256 of the input with every extraction; the exporters record the
   exporter name and version. The exporters do not embed the input hash in the
   exported file itself.
-- **Skipped rows are only a count.** There is no list of *what* was skipped and
-  why (investment vs. split total vs. missing amount/account/date). The count
-  is shown in both CLIs and the desktop overview.
+- **Skipped rows are listed by reason.** Closed in §12:
+  `ExtractedData.Skipped` is now a `SkippedBreakdown` (split totals,
+  investment rows, zero-amount rows, rows without an account or date, the
+  receiving side of transfers, transfers whose receiving account is unknown);
+  the total is unchanged. Both CLIs print the reasons, the desktop overview
+  lists them, and the frozen JSON export still carries the bare total.
 - **Validation.** Delivered: duplicates, transfer amount fallbacks and
   same-currency mismatches, orphan transfer accounts, accounts without
   transactions, split totals versus fragment sums, broken split references,
@@ -322,7 +330,14 @@ exchange rates, and deep category nesting.
 
 ## 9. Repository hygiene observed
 
-- Formatting (`gofmt`) and `go vet` clean; CI green on three OSes.
+- Formatting and `go vet`: clean today, but §12 found `gofmt -l` was **not**
+  empty on 2026-11-26 (`desktop/app.go`, `validation.go`,
+  `validation_test.go`, all touched by `d965104`) while CI had no formatting
+  job. Fixed, and CI now fails on any gofmt diff, so the claim cannot rot
+  again. The same CI job runs `scripts/check-no-telemetry.sh`, which fails on
+  analytics/crash-reporting endpoints and on network calls in the Go and
+  frontend code — the offline invariant is machine-enforced now, not just
+  asserted.
 - Release pipeline verified end-to-end (five binaries, tag-stamped versions,
   `SHA256SUMS.txt`, published at v1.0.0).
 - No TODOs, FIXMEs or stray panics in production code (the only `panic`s are in
@@ -330,3 +345,43 @@ exchange rates, and deep category nesting.
 - Documentation is current, including the honest "what is left out" section of
   the README; `docs/MONEY_FILE_FORMAT.md` points at Honey Ledger's canonical
   format research document.
+
+## 12. Defect closure and hygiene pass (2026-11-26)
+
+Sweep of §3 and §9 against the working tree, closing every defect that does
+not depend on a real Microsoft Money file. Engine changes were applied
+identically in Honey Ledger (`validation.go` synced back, defects 4–6 and the
+skipped breakdown propagated), keeping the shared engine byte-identical
+modulo import paths.
+
+- **Defects 4 and 5 (float64 value layer):** `Database.Value` now returns the
+  scaled `int64` for money and `*big.Rat` for numeric; `Database.Numeric`
+  returns `*big.Rat` with `10^scale` as the exact denominator. `Float` and
+  `Double` stay `float64` — that is their stored IEEE-754 form. The desktop
+  raw inspector renders the exact decimal. Tests assert the exact scaled
+  value and an exact negative numeric.
+- **Defect 6 (silent text truncation):** `expandText` reports a lone trailing
+  byte in the uncompressed state as `ErrCorruptRow` instead of dropping it;
+  `decodeText` propagates it. A text column with a truncated tail fails its
+  row, a truncated column name fails its definition (counted once as a
+  corrupt definition), and a truncated catalog name is counted as an
+  unreadable catalog entry. Hardening tests cover the new paths.
+- **Defect 8 (Database not thread-safe):** the desktop app serializes the raw
+  inspection session with a mutex; `TestInspectRowsConcurrentPageWalks`
+  walks pages from eight goroutines and fails under `-race` without the lock.
+- **Skipped rows listed by reason (§5):** `ExtractedData.Skipped` is a
+  `SkippedBreakdown` with one field per reason and `Total()`; both CLIs print
+  the reasons and the desktop overview lists them. The JSON export keeps its
+  frozen `skippedRows` total. Honey Ledger's importer warning now names the
+  reasons too.
+- **Hygiene (§9):** the three unformatted files are gofmt-clean again; CI has
+  a formatting job and `scripts/check-no-telemetry.sh` (analytics endpoints
+  plus network calls in Go and frontend code). The script passes today and
+  fails on a planted `net/http` import or `fetch()` call.
+
+Carried forward, unchanged in scope:
+
+- Defect 3 (code page never used) — still needs a non-Western real-file
+  reproduction before changing decoding.
+- Defect 7 (transfer matching provenance) — Phase 6.
+- §8 standing tasks: real-file validation pass and the fixture wish list.
