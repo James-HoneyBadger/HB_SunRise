@@ -89,6 +89,7 @@ export interface ExtractionView {
   transfers: TransferView[]
   splits: SplitView[]
   skipped: number
+  skippedReasons: string[]
   diagnostics: DiagnosticsView
   validation: FindingView[]
   validationSummary: ValidationSummaryView

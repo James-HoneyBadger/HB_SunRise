@@ -233,6 +233,7 @@ export namespace main {
 	    transfers: transferView[];
 	    splits: splitView[];
 	    skipped: number;
+	    skippedReasons: string[];
 	    diagnostics: msmoney.ExtractedDiagnostics;
 	    validation: findingView[];
 	    validationSummary: validationSummaryView;
@@ -252,6 +253,7 @@ export namespace main {
 	        this.transfers = this.convertValues(source["transfers"], transferView);
 	        this.splits = this.convertValues(source["splits"], splitView);
 	        this.skipped = source["skipped"];
+	        this.skippedReasons = source["skippedReasons"];
 	        this.diagnostics = this.convertValues(source["diagnostics"], msmoney.ExtractedDiagnostics);
 	        this.validation = this.convertValues(source["validation"], findingView);
 	        this.validationSummary = this.convertValues(source["validationSummary"], validationSummaryView);

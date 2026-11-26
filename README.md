@@ -107,7 +107,8 @@ hold; QIF memos are written on one line.
 
 Investment activity, the total line of a split transaction, and rows without an
 amount, account or date cannot become ordinary transactions. The program reports
-how many rows were left out, so the count is never hidden.
+how many rows were left out and why — the total and the count per reason — so a
+skipped row is never hidden.
 
 ## Building it
 
