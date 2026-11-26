@@ -11,6 +11,7 @@ import {
 } from '../wailsjs/go/main/App'
 import type { ExtractionView, Progress } from './bindings'
 import { useVirtual } from './virtual'
+import { filterLedger, summarizeLedger, emptyLedgerFilter, formatMinor } from './ledger'
 import RawInspector from './Raw'
 import { IncomeVersusExpense, CategoryBars, CumulativeLine, monthlySeries, spendingByCategory, spendingByPayee, cumulativeByAccount } from './charts'
 
@@ -48,6 +49,7 @@ export default function App() {
   const [exportKey, setExportKey] = useState('honeyledger')
   const [exportNote, setExportNote] = useState('')
   const [query, setQuery] = useState('')
+  const [ledgerFilter, setLedgerFilter] = useState(emptyLedgerFilter)
   const [sort, setSort] = useState<{ field: 'time' | 'amount' | 'account'; dir: 1 | -1 }>({ field: 'time', dir: 1 })
 
   const refreshRecent = useCallback(() => {
@@ -79,6 +81,8 @@ export default function App() {
       try {
         const result = await OpenPath(path)
         setView(result)
+        setQuery('')
+        setLedgerFilter(emptyLedgerFilter)
         setTab('overview')
         refreshRecent()
       } catch (err) {
@@ -164,24 +168,22 @@ export default function App() {
 
   const transactions = useMemo(() => {
     if (!view) return []
-    const filtered = view.transactions.filter((t) => {
-      const hay = `${t.account} ${t.payee} ${t.currency} ${t.memo} ${t.category} ${t.subCategory} ${t.transferAccount} ${t.type}`.toLowerCase()
-      return hay.includes(query.toLowerCase())
-    })
+    const filtered = filterLedger(view.transactions, { ...ledgerFilter, query })
     const dir = sort.dir
     return [...filtered].sort((a, b) => {
       if (sort.field === 'time') return a.time.localeCompare(b.time) * dir
       if (sort.field === 'amount') return (a.amount - b.amount) * dir
       return a.account.localeCompare(b.account) * dir
     })
-  }, [view, query, sort])
+  }, [view, query, sort, ledgerFilter])
+  const ledgerTotals = useMemo(() => summarizeLedger(transactions), [transactions])
 
   const [reportAccount, setReportAccount] = useState('')
 
   const confirmed = view?.validation.filter((f) => f.severity === 'confirmed').length ?? 0
   const uncertain = view?.validation.filter((f) => f.severity === 'uncertain').length ?? 0
 
-  const virtual = useVirtual(transactions.length, 34)
+  const virtual = useVirtual(transactions.length, 34, 8, tab === 'transactions', transactions)
 
   const [reportCurrency, setReportCurrency] = useState('')
   const currencies = useMemo(() => [...new Set((view?.transactions ?? []).map(t => t.currency))].sort(), [view])
@@ -378,7 +380,7 @@ export default function App() {
                   <tbody>
                     {view.accounts.map((account) => (
                       <tr key={account.name}>
-                        <td>{account.name}</td>
+                        <td><button className="link" onClick={() => { setQuery(''); setLedgerFilter({ ...emptyLedgerFilter, account: account.name }); setTab('transactions') }}>{account.name}</button></td>
                         <td className="mono">{account.currency}</td>
                         <td>
                           {account.closed && <span className="chip muted-chip" title="Marked closed in the file">closed</span>}
@@ -395,10 +397,34 @@ export default function App() {
             {tab === 'transactions' && (
               <section className="table-wrap">
                 <div className="table-tools">
-                  <input placeholder="Search accounts, payees, currencies, memos…" value={query} onChange={(e) => setQuery(e.target.value)} />
+                  <input aria-label="Search transactions" placeholder="Search accounts, payees, currencies, memos…" value={query} onChange={(e) => setQuery(e.target.value)} />
+                  <button className="secondary" onClick={() => { setQuery(''); setLedgerFilter(emptyLedgerFilter) }}>Reset filters</button>
                   <span className="muted">
                     {transactions.length} of {view.transactions.length} transactions
                   </span>
+                </div>
+                <div className="table-tools" style={{ flexWrap: 'wrap' }}>
+                  <label>Account <select value={ledgerFilter.account} onChange={e => setLedgerFilter(f => ({ ...f, account: e.target.value }))}>
+                    <option value="">All accounts</option>
+                    {[...new Set(view.accounts.map(a => a.name))].sort().map(name => <option key={name}>{name}</option>)}
+                  </select></label>
+                  <label>Type <select value={ledgerFilter.type} onChange={e => setLedgerFilter(f => ({ ...f, type: e.target.value }))}>
+                    <option value="">All types</option>
+                    {[...new Set(view.transactions.map(t => t.type))].sort().map(type => <option key={type}>{type}</option>)}
+                  </select></label>
+                  <label>Source currency <select value={ledgerFilter.currency} onChange={e => setLedgerFilter(f => ({ ...f, currency: e.target.value }))}>
+                    <option value="">All currencies</option>
+                    {currencies.filter(Boolean).map(currency => <option key={currency}>{currency}</option>)}
+                  </select></label>
+                  <label>From <input type="date" value={ledgerFilter.from} onChange={e => setLedgerFilter(f => ({ ...f, from: e.target.value }))} /></label>
+                  <label>Through <input type="date" value={ledgerFilter.through} onChange={e => setLedgerFilter(f => ({ ...f, through: e.target.value }))} /></label>
+                </div>
+                {ledgerFilter.from && ledgerFilter.through && ledgerFilter.from > ledgerFilter.through && <p className="warn">The start date is after the end date.</p>}
+                <p className="muted small">Account filtering includes transfers into or out of the account. Amounts are source-row amounts, not account balances. Export still writes the entire extraction.</p>
+                <div className="card">
+                  <h2>Filtered cash flow (excluding transfers)</h2>
+                  {ledgerTotals.length === 0 && <p className="muted">No income or expense rows in this selection.</p>}
+                  {ledgerTotals.map(total => <p key={total.currency} className="mono">{total.currency || 'Unknown currency'} · {total.valid ? `Income ${formatMinor(total.income)} · Expense ${formatMinor(total.expense)} · Net ${formatMinor(total.income - total.expense)}` : 'Totals unavailable: amount exceeds safe integer precision or currency is unknown'}</p>)}
                 </div>
                 <div className="virt-head">
                   <span className="sortable" onClick={() => setSort({ field: 'time', dir: sort.field === 'time' ? ((sort.dir * -1) as 1 | -1) : 1 })}>
@@ -424,7 +450,7 @@ export default function App() {
                           {t.split && <span className="chip" title="Split transaction fragment">split</span>}
                         </span>
                         <span>{t.account}</span>
-                        <span className="mono amount">{amountOf(t.amount)}</span>
+                        <span className="mono amount">{Number.isSafeInteger(t.amount) ? amountOf(t.amount) : 'Unsafe amount'} {t.currency || '?'}</span>
                         <span>
                           {t.transferAccount && (
                             <span className="muted">
