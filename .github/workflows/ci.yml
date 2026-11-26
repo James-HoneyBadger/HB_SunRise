@@ -33,6 +33,31 @@ jobs:
       - name: Test with race detector
         run: go test -race ./...
 
+  hygiene:
+    name: Formatting and offline checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check formatting
+        run: |
+          files="$(gofmt -l .)"
+          if [ -n "$files" ]; then
+            echo "gofmt is needed on these files:" >&2
+            echo "$files" >&2
+            exit 1
+          fi
+
+      - name: Check for telemetry and network calls
+        run: sh scripts/check-no-telemetry.sh
+
   desktop:
     name: Desktop application build
     runs-on: ubuntu-latest
