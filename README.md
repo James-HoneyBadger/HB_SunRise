@@ -140,3 +140,7 @@ of that project and of the HB Money Extractor program this code is derived from,
 and [docs/BUILDING_HB_SUNRISE.md](docs/BUILDING_HB_SUNRISE.md) for the roadmap
 from this extractor to the full HB SunRise vision — reconstructing Microsoft
 Money files, not only reading them.
+
+## Shared decoder maintenance
+
+See [Money engine compatibility and parity](docs/MONEY_ENGINE_PARITY.md) for coordinated decoder changes and regression checks.
